@@ -20,7 +20,7 @@ namespace Sistema_Chamados.Controllers
 
             if (user == null)
             {
-                return Unauthorized(new { message = "Credenciais inválidasGRG !" });
+                return Unauthorized(new { message = "Credenciais inválidas!" });
             }
 
             // TODO: Implementar geração de token JWT
