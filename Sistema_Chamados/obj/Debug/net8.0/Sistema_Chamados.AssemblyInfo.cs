@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Sistema_Chamados")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2aa6a1afd640a8317c22777381bf2972ef4d2353")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+64894e4ab3e1826aac8c741b33332b21d1eb16bf")]
 [assembly: System.Reflection.AssemblyProductAttribute("Sistema_Chamados")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Sistema_Chamados")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

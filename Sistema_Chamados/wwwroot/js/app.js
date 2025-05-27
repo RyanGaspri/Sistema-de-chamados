@@ -592,12 +592,7 @@ function setupNavigation(role) {
 
     if (role === 'technician') {
         navHTML += `
-            <li><a href="#" data-page="myTasks">
-                <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
-            </svg>
-                Minhas Tarefas
-            </a></li>
-        `;
+         `;
     }
 
     navHTML += '</ul>';
@@ -638,9 +633,7 @@ function setupNavigation(role) {
                 case 'reports':
                     loadReports();
                     break;
-                case 'myTasks':
-                    loadMyTasks();
-                    break;
+            
             }
         });
     });
