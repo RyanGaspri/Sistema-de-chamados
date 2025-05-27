@@ -84,9 +84,65 @@ const mockTickets = [
     }
 ];
 
-// Sistema de notificações
-const notifications = [];
-let notificationCount = 0;
+const mockMessages = [
+    {
+        id: 1,
+        fromUserId: 2,
+        toUserId: 3,
+        subject: 'Manutenção Agendada',
+        content: 'Olá Pedro, precisamos agendar uma manutenção preventiva para a Máquina de Embalagem. Podemos marcar para amanhã às 9h?',
+        timestamp: new Date(2023, 10, 18, 14, 30),
+        read: true
+    },
+    {
+        id: 2,
+        fromUserId: 1,
+        toUserId: 3,
+        subject: 'Problema na Esteira',
+        content: 'Estamos com um problema recorrente na esteira transportadora. Poderia verificar quando tiver disponibilidade?',
+        timestamp: new Date(2023, 10, 19, 10, 15),
+        read: false
+    },
+    {
+        id: 3,
+        fromUserId: 4,
+        toUserId: 2,
+        subject: 'Relatório Mensal',
+        content: 'Bom dia Maria, o relatório mensal de manutenções preventivas e corretivas está disponível para análise. Por favor, revise e me dê um retorno até o final do dia.',
+        timestamp: new Date(2023, 10, 19, 9, 0),
+        read: false
+    },
+    {
+        id: 4,
+        fromUserId: 3,
+        toUserId: 1,
+        subject: 'Retorno sobre Esteira',
+        content: 'João, verifiquei a esteira e identifiquei um problema nos rolamentos. Vou providenciar a troca amanhã pela manhã.',
+        timestamp: new Date(2023, 10, 19, 16, 45),
+        read: true
+    }
+];
+
+const mockAnnouncements = [
+    {
+        id: 1,
+        fromUserId: 4,
+        title: 'Manutenção Programada - Sistema Offline',
+        content: 'Informamos que no próximo domingo (26/11) das 8h às 12h, o sistema estará indisponível para manutenção programada. Por favor, planejem suas atividades considerando esta parada.',
+        timestamp: new Date(2023, 10, 18, 11, 0),
+        targetSectors: null, // all sectors
+        readBy: [1, 2]
+    },
+    {
+        id: 2,
+        fromUserId: 2,
+        title: 'Novo Procedimento de Manutenção',
+        content: 'A partir da próxima semana, implementaremos um novo procedimento para abertura de chamados de manutenção. Todos os setores devem utilizar o novo formulário disponível no sistema.\n\nCaso tenham dúvidas, entrem em contato com o setor de Gerência.',
+        timestamp: new Date(2023, 10, 19, 15, 30),
+        targetSectors: ['Produção', 'Logística', 'Moldagem'],
+        readBy: []
+    }
+];
 
 // Estado da aplicação
 let currentUser = null;
@@ -94,9 +150,37 @@ let darkMode = false;
 let sidebarOpen = true;
 let countdownIntervals = [];
 
+// Acessibilidade
+function initAccessibilityFeatures() {
+    // Carregar preferências salvas
+    if (localStorage.getItem('highContrast') === 'true') {
+        document.body.classList.add('high-contrast');
+        document.getElementById('high-contrast').checked = true;
+    }
+
+    if (localStorage.getItem('focusHighlight') === 'true') {
+        document.body.classList.add('focus-highlight');
+        document.getElementById('focus-highlight').checked = true;
+    }
+
+    // Aplicar tamanho de fonte salvo
+    const fontSize = localStorage.getItem('fontSize');
+    if (fontSize) {
+        document.documentElement.style.fontSize = fontSize;
+    }
+
+    // Inicializar narrador de texto
+    window.textToSpeechActive = localStorage.getItem('textToSpeech') === 'true';
+    if (window.textToSpeechActive) {
+        document.getElementById('text-to-speech-toggle').textContent = 'Desativar Narrador';
+        document.getElementById('text-to-speech-toggle').classList.add('active');
+    }
+}
+
 // Inicialização da aplicação
 document.addEventListener('DOMContentLoaded', function () {
     initializeApp();
+    checkCookieConsent();
 });
 
 function initializeApp() {
@@ -105,2214 +189,513 @@ function initializeApp() {
         enableDarkMode();
     }
 
+    // Inicializar configurações de acessibilidade
+    initAccessibilityFeatures();
+
     // Event listeners
     setupEventListeners();
+
+    // Initialize notification system first
+    initializeNotificationSystem();
 }
 
+function initializeNotificationSystem() {
+    // Create or ensure window.notificationSystem exists
+    window.notificationSystem = window.notificationSystem || {};
+
+    if (!window.notificationSystem?.messages) {
+        // Populate with mock/initial data
+        window.notificationSystem = {
+            messages: mockMessages,
+            notifications: [],
+            announcements: mockAnnouncements,
+            callbacks: {},
+            ...window.notificationSystem
+        };
+    }
+
+    window.notificationSystem.messages = mockMessages;
+    window.notificationSystem.announcements = mockAnnouncements;
+
+    // Load state from localStorage
+    window.notificationSystem.loadState();
+
+    // Set up event listeners for notifications
+    window.notificationSystem.on('newMessage', (message) => {
+        if (currentUser && message.toUserId === currentUser.id) {
+            const sender = mockUsers.find(u => u.id === message.fromUserId);
+            showNotification(
+                'Nova Mensagem',
+                `Você recebeu uma nova mensagem de ${sender ? sender.name : 'Usuário Desconhecido'}`,
+                'info'
+            );
+            updateHeaderNotifications();
+        }
+    });
+
+    window.notificationSystem.on('newAnnouncement', (announcement) => {
+        if (currentUser && (!announcement.targetSectors || announcement.targetSectors.includes(currentUser.sector))) {
+            showNotification(
+                'Novo Comunicado',
+                `Novo comunicado: ${announcement.title}`,
+                'info'
+            );
+            updateHeaderNotifications();
+        }
+    });
+
+    window.notificationSystem.on('newNotification', (notification) => {
+        if (currentUser && (notification.targetUserId === null || notification.targetUserId === currentUser.id)) {
+            updateHeaderNotifications();
+        }
+    });
+
+    // Save state periodically
+    setInterval(() => {
+        window.notificationSystem.saveState();
+    }, 60000); // Save every minute
+}
+
+// Event listeners setup
 function setupEventListeners() {
     // Login
     document.getElementById('login-form').addEventListener('submit', handleLogin);
 
-    // Forgot Password
-    const forgotPasswordLink = document.getElementById('forgot-password-link');
-    if (forgotPasswordLink) {
-        forgotPasswordLink.addEventListener('click', showPasswordRecovery);
-    }
-
-    // Back to login
-    const backToLoginBtn = document.getElementById('back-to-login');
-    if (backToLoginBtn) {
-        backToLoginBtn.addEventListener('click', hidePasswordRecovery);
-    }
-
-    // Recovery form
-    const recoveryForm = document.getElementById('recovery-form');
-    if (recoveryForm) {
-        recoveryForm.addEventListener('submit', handlePasswordRecovery);
-    }
-
-    // Logout
-    document.getElementById('logout-btn').addEventListener('click', handleLogout);
-
     // Theme toggle
-    const themeSwitch = document.getElementById('theme-switch');
-    if (themeSwitch) {
-        themeSwitch.addEventListener('change', toggleTheme);
-        themeSwitch.checked = localStorage.getItem('darkMode') === 'true';
-    }
+    document.getElementById('theme-switch').addEventListener('change', function () {
+        if (this.checked) {
+            enableDarkMode();
+        } else {
+            enableLightMode();
+        }
+    });
 
-    // Menu toggle
-    const menuToggle = document.getElementById('menu-toggle');
-    if (menuToggle) {
-        menuToggle.addEventListener('click', toggleSidebar);
-    }
+    // Sidebar toggle on mobile
+    document.getElementById('menu-toggle').addEventListener('click', function () {
+        this.classList.toggle('active');
+        document.getElementById('main-nav').classList.toggle('open');
+    });
+
+    // Forgot password link
+    document.getElementById('forgot-password-link').addEventListener('click', function (e) {
+        e.preventDefault();
+        showForgotPasswordForm();
+    });
+
+    // Logout button
+    document.getElementById('logout-btn').addEventListener('click', function () {
+        currentUser = null;
+        document.getElementById('app-container').classList.add('hidden');
+        document.getElementById('login-container').classList.remove('hidden');
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
+        showNotification('Sessão Encerrada', 'Você saiu do sistema com sucesso', 'info');
+    });
 
     // Notification bell
-    const notificationBell = document.getElementById('notification-bell');
-    if (notificationBell) {
-        notificationBell.addEventListener('click', toggleNotificationPanel);
+    setupNotificationBell();
+
+    // Accessibility toolbar toggle
+    const accessibilityToggle = document.getElementById('accessibility-toggle');
+    if (accessibilityToggle) {
+        accessibilityToggle.addEventListener('click', toggleAccessibilityPanel);
+    }
+
+    // High contrast toggle
+    const highContrastToggle = document.getElementById('high-contrast');
+    if (highContrastToggle) {
+        highContrastToggle.addEventListener('change', toggleHighContrast);
+    }
+
+    // Font size controls
+    const decreaseFontBtn = document.getElementById('decrease-font');
+    const resetFontBtn = document.getElementById('reset-font');
+    const increaseFontBtn = document.getElementById('increase-font');
+
+    if (decreaseFontBtn) decreaseFontBtn.addEventListener('click', decreaseFontSize);
+    if (resetFontBtn) resetFontBtn.addEventListener('click', resetFontSize);
+    if (increaseFontBtn) increaseFontBtn.addEventListener('click', increaseFontSize);
+
+    // Text to speech toggle
+    const textToSpeechToggle = document.getElementById('text-to-speech-toggle');
+    if (textToSpeechToggle) {
+        textToSpeechToggle.addEventListener('click', toggleTextToSpeech);
+    }
+
+    // Focus highlight toggle
+    const focusHighlightToggle = document.getElementById('focus-highlight');
+    if (focusHighlightToggle) {
+        focusHighlightToggle.addEventListener('change', toggleFocusHighlight);
     }
 }
 
-// Theme Functions
-function toggleTheme() {
-    if (document.body.classList.contains('dark-mode')) {
-        disableDarkMode();
-    } else {
-        enableDarkMode();
-    }
-}
-
-function enableDarkMode() {
-    document.body.classList.add('dark-mode');
-    localStorage.setItem('darkMode', 'true');
-    darkMode = true;
-
-    // Update charts if they exist
-    updateChartsForTheme();
-}
-
-function disableDarkMode() {
-    document.body.classList.remove('dark-mode');
-    localStorage.setItem('darkMode', 'false');
-    darkMode = false;
-
-    // Update charts if they exist
-    updateChartsForTheme();
-}
-
-function updateChartsForTheme() {
-    // This will be called when theme changes to update any visible charts
-    // We'll implement this in the chart rendering functions
-}
-
-// Sidebar Toggle
-function toggleSidebar() {
-    const sidebar = document.getElementById('main-nav');
-    const menuToggle = document.getElementById('menu-toggle');
-
-    if (sidebar) {
-        if (sidebar.classList.contains('open') || sidebarOpen) {
-            sidebar.classList.remove('open');
-            menuToggle.classList.remove('active');
-            sidebarOpen = false;
-        } else {
-            sidebar.classList.add('open');
-            menuToggle.classList.add('active');
-            sidebarOpen = true;
-        }
-    }
-}
-
-// Notification System
-function showNotification(title, message, type = 'info', duration = 5000) {
-    const notificationContainer = document.getElementById('notification-container');
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-
-    let iconPath = '';
-    switch (type) {
-        case 'info':
-            iconPath = 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z';
-            break;
-        case 'success':
-            iconPath = 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z';
-            break;
-        case 'warning':
-            iconPath = 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z';
-            break;
-        case 'error':
-            iconPath = 'M12 2C6.48 2 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z';
-            break;
-    }
-
-    notification.innerHTML = `
-        <div class="notification-icon">
-            <svg viewBox="0 0 24 24">
-                <path d="${iconPath}"/>
-            </svg>
-        </div>
-        <div class="notification-content">
-            <div class="notification-title">${title}</div>
-            <div class="notification-message">${message}</div>
-        </div>
-        <button class="notification-close">&times;</button>
-    `;
-
-    notificationContainer.appendChild(notification);
-
-    // Increment notification counter
-    updateNotificationCount(1);
-
-    // Store notification for history
-    notifications.push({
-        id: notifications.length + 1,
-        title,
-        message,
-        type,
-        timestamp: new Date()
-    });
-
-    // Auto-remove after duration
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, duration);
-
-    // Close button
-    const closeBtn = notification.querySelector('.notification-close');
-    closeBtn.addEventListener('click', () => {
-        notificationContainer.removeChild(notification);
-    });
-
-    return notification;
-}
-
-function updateNotificationCount(change) {
-    notificationCount += change;
-    const countElement = document.getElementById('notification-count');
-
-    if (countElement) {
-        countElement.textContent = notificationCount > 9 ? '9+' : notificationCount;
-        countElement.style.display = notificationCount > 0 ? 'flex' : 'none';
-    }
-}
-
-function toggleNotificationPanel() {
-    // For future implementation: show notification history panel
-    showNotification('Notificações', 'Histórico de notificações será implementado em breve.', 'info');
-
-    // Reset notification count when viewed
-    updateNotificationCount(-notificationCount);
-}
-
-// Simulate real-time updates
-function simulateRealTimeUpdates() {
-    // Set interval to simulate real-time updates
-    setInterval(() => {
-        if (!currentUser) return; // Only if logged in
-
-        const randomEvent = Math.floor(Math.random() * 10);
-
-        if (randomEvent < 3 && currentUser.role === 'technician') {
-            // New ticket assigned
-            const machine = mockMachines[Math.floor(Math.random() * mockMachines.length)];
-            showNotification(
-                'Novo chamado atribuído',
-                `Você recebeu um novo chamado para a ${machine.name}`,
-                'info'
-            );
-        } else if (randomEvent === 3 && currentUser.role === 'manager') {
-            // Critical machine status
-            const machine = mockMachines[Math.floor(Math.random() * mockMachines.length)];
-            showNotification(
-                'Alerta de máquina',
-                `${machine.name} está apresentando status crítico`,
-                'warning'
-            );
-        } else if (randomEvent === 4) {
-            // Maintenance completed
-            showNotification(
-                'Manutenção concluída',
-                'Uma tarefa de manutenção foi concluída com sucesso',
-                'success'
-            );
-        }
-    }, 45000); // Every 45 seconds
-}
-
-// Funções auxiliares
-function getFormattedDate(date) {
-    if (!date) return "";
-    return new Date(date).toLocaleString('pt-BR');
-}
-
-function getWeeklyTicketsCount(machineId) {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    return mockTickets.filter(ticket =>
-        ticket.machineId === machineId &&
-        new Date(ticket.createdAt) >= oneWeekAgo
-    ).length;
-}
-
-function getMachineStatus(machineId) {
-    const ticketsCount = getWeeklyTicketsCount(machineId);
-
-    if (ticketsCount < 3) return "ok";
-    if (ticketsCount < 6) return "warning";
-    return "critical";
-}
-
-function getStatusLabel(status) {
-    switch (status) {
-        case "ok": return "OK";
-        case "warning": return "Atenção";
-        case "critical": return "Crítico";
-        case "active": return "Ativa";
-        case "maintenance": return "Em Manutenção";
-        case "open": return "Aberto";
-        case "inProgress": return "Em Andamento";
-        case "closed": return "Concluído";
-        default: return status;
-    }
-}
-
-function getStatusClass(status) {
-    switch (status) {
-        case "ok": return "status-ok";
-        case "warning": return "status-warning";
-        case "critical": return "status-critical";
-        case "active": return "status-ok";
-        case "maintenance": return "status-maintenance";
-        case "open": return "status-warning";
-        case "inProgress": return "status-maintenance";
-        case "closed": return "status-ok";
-        default: return "";
-    }
-}
-
-// Authentication Functions
-async function handleLogin(e) {
+// Login handling function
+function handleLogin(e) {
     e.preventDefault();
 
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
 
-    try {
-        const response = await fetch('/Auth/Login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username, password })
-        });
+    // Find user
+    const user = mockUsers.find(u => u.username === username && u.password === password);
 
-        if (response.ok) {
-            const user = await response.json();
-            
-            // Success
-            currentUser = user;
-            document.getElementById('login-container').classList.add('hidden');
-            document.getElementById('app-container').classList.remove('hidden');
-            document.getElementById('user-display').textContent = user.name;
+    if (user) {
+        currentUser = user;
+        document.getElementById('login-container').classList.add('hidden');
+        document.getElementById('app-container').classList.remove('hidden');
+        document.getElementById('user-display').textContent = user.name;
 
-            setupNavigation(user.role);
-            loadDashboard();
+        // Setup navigation based on user role
+        setupNavigation(user.role);
 
-            // Welcome notification
-            showNotification('Bem-vindo', `Olá, ${user.name}! Você está conectado ao sistema.`, 'success');
+        // Show dashboard as default view
+        loadDashboard();
 
-            // Start real-time updates
-            simulateRealTimeUpdates();
-        } else {
-            const error = await response.json();
-            showNotification('Erro de Login', error.message || 'Credenciais inválidas. Tente novamente.', 'error');
-        }
-    } catch (error) {
-        showNotification('Erro', 'Ocorreu um erro ao tentar fazer login. Tente novamente mais tarde.', 'error');
+        // Add notification for successful login
+        showNotification('Bem-vindo', `Olá, ${user.name}! Você entrou no sistema com sucesso.`, 'success');
+
+        // Announce login to screen readers
+        announceToScreenReader(`Login realizado com sucesso. Bem-vindo, ${user.name}`);
+
+        // Update notification count
+        updateHeaderNotifications();
+    } else {
+        // Show error message
+        showNotification('Erro de Login', 'Usuário ou senha incorretos. Tente novamente.', 'error');
+
+        // Announce error to screen readers
+        announceToScreenReader('Erro de login. Usuário ou senha incorretos. Tente novamente.');
+
+        // Clear password field
+        document.getElementById('password').value = '';
     }
 }
 
-function handleLogout() {
-    // Clear intervals to prevent memory leaks
-    clearAllIntervals();
+// Accessibility panel toggle
+function toggleAccessibilityPanel() {
+    const panel = document.getElementById('accessibility-panel');
+    panel.classList.toggle('hidden');
 
-    // Reset application state
-    currentUser = null;
-    document.getElementById('app-container').classList.add('hidden');
-    document.getElementById('login-container').classList.remove('hidden');
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
-
-    showNotification('Sessão encerrada', 'Você foi desconectado do sistema.', 'info');
-}
-
-function showPasswordRecovery(e) {
-    e.preventDefault();
-    document.getElementById('login-container').classList.add('hidden');
-    document.getElementById('password-recovery-container').classList.remove('hidden');
-}
-
-function hidePasswordRecovery() {
-    document.getElementById('password-recovery-container').classList.add('hidden');
-    document.getElementById('login-container').classList.remove('hidden');
-}
-
-async function handlePasswordRecovery(e) {
-    e.preventDefault();
-    const email = document.getElementById('recovery-email').value;
-
-    try {
-        const response = await fetch('/Auth/RecoverPassword', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email })
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            showNotification(
-                'E-mail enviado',
-                result.message,
-                'success'
-            );
-
-            // Return to login screen
-            hidePasswordRecovery();
-        } else {
-            const error = await response.json();
-            showNotification(
-                'Erro',
-                error.message || 'Não foi possível processar sua solicitação.',
-                'error'
-            );
-        }
-    } catch (error) {
-        showNotification(
-            'Erro',
-            'Ocorreu um erro ao tentar recuperar sua senha. Tente novamente mais tarde.',
-            'error'
-        );
+    if (!panel.classList.contains('hidden')) {
+        // Announce to screen readers
+        announceToScreenReader('Painel de acessibilidade aberto');
     }
 }
 
-// Navegação
+// High contrast mode
+function toggleHighContrast() {
+    const highContrastEnabled = document.getElementById('high-contrast').checked;
+
+    if (highContrastEnabled) {
+        document.body.classList.add('high-contrast');
+        localStorage.setItem('highContrast', 'true');
+        announceToScreenReader('Modo de alto contraste ativado');
+    } else {
+        document.body.classList.remove('high-contrast');
+        localStorage.setItem('highContrast', 'false');
+        announceToScreenReader('Modo de alto contraste desativado');
+    }
+}
+
+// Font size adjustments
+function increaseFontSize() {
+    const currentSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const newSize = currentSize * 1.1;
+    document.documentElement.style.fontSize = `${newSize}px`;
+    localStorage.setItem('fontSize', `${newSize}px`);
+    announceToScreenReader('Tamanho da fonte aumentado');
+}
+
+function decreaseFontSize() {
+    const currentSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const newSize = currentSize * 0.9;
+    document.documentElement.style.fontSize = `${newSize}px`;
+    localStorage.setItem('fontSize', `${newSize}px`);
+    announceToScreenReader('Tamanho da fonte diminuído');
+}
+
+function resetFontSize() {
+    document.documentElement.style.fontSize = '';
+    localStorage.removeItem('fontSize');
+    announceToScreenReader('Tamanho da fonte redefinido');
+}
+
+// Text to speech
+function toggleTextToSpeech() {
+    window.textToSpeechActive = !window.textToSpeechActive;
+    const button = document.getElementById('text-to-speech-toggle');
+
+    if (window.textToSpeechActive) {
+        button.textContent = 'Desativar Narrador';
+        button.classList.add('active');
+        localStorage.setItem('textToSpeech', 'true');
+        announceToScreenReader('Narrador de texto ativado');
+
+        // Add event listeners for interactive elements
+        addTextToSpeechListeners();
+    } else {
+        button.textContent = 'Ativar Narrador';
+        button.classList.remove('active');
+        localStorage.setItem('textToSpeech', 'false');
+        announceToScreenReader('Narrador de texto desativado');
+
+        // Remove event listeners
+        removeTextToSpeechListeners();
+    }
+}
+
+function addTextToSpeechListeners() {
+    // Add mouseover events to buttons, links, and other interactive elements
+    document.querySelectorAll('button, a, input, select, textarea, .action-btn, .data-table td, .status-badge').forEach(elem => {
+        elem.addEventListener('mouseover', handleElementHover);
+        elem.setAttribute('data-tts-enabled', 'true');
+    });
+}
+
+function removeTextToSpeechListeners() {
+    document.querySelectorAll('[data-tts-enabled="true"]').forEach(elem => {
+        elem.removeEventListener('mouseover', handleElementHover);
+        elem.removeAttribute('data-tts-enabled');
+    });
+}
+
+function handleElementHover(e) {
+    if (!window.textToSpeechActive) return;
+
+    let text = '';
+
+    // Get text based on element type
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A' || e.target.classList.contains('action-btn')) {
+        text = e.target.textContent.trim() || e.target.getAttribute('aria-label') || 'Botão';
+    } else if (e.target.tagName === 'INPUT') {
+        const label = document.querySelector(`label[for="${e.target.id}"]`);
+        text = (label ? label.textContent + ': ' : '') + (e.target.value || e.target.placeholder || 'Campo de entrada');
+    } else if (e.target.tagName === 'SELECT') {
+        const label = document.querySelector(`label[for="${e.target.id}"]`);
+        text = (label ? label.textContent + ': ' : '') + (e.target.options[e.target.selectedIndex]?.textContent || 'Seleção');
+    } else if (e.target.tagName === 'TEXTAREA') {
+        const label = document.querySelector(`label[for="${e.target.id}"]`);
+        text = (label ? label.textContent + ': ' : '') + (e.target.value || e.target.placeholder || 'Área de texto');
+    } else if (e.target.classList.contains('status-badge')) {
+        text = 'Status: ' + e.target.textContent.trim();
+    } else if (e.target.tagName === 'TD') {
+        text = e.target.textContent.trim();
+    }
+
+    // Speak the text
+    if (text) {
+        speakText(text);
+    }
+}
+
+function speakText(text) {
+    if (!window.speechSynthesis) return;
+
+    // Cancel any current speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'pt-BR';
+    window.speechSynthesis.speak(utterance);
+}
+
+// Focus highlight
+function toggleFocusHighlight() {
+    const focusHighlightEnabled = document.getElementById('focus-highlight').checked;
+
+    if (focusHighlightEnabled) {
+        document.body.classList.add('focus-highlight');
+        localStorage.setItem('focusHighlight', 'true');
+        announceToScreenReader('Destaque de foco ativado');
+    } else {
+        document.body.classList.remove('focus-highlight');
+        localStorage.setItem('focusHighlight', 'false');
+        announceToScreenReader('Destaque de foco desativado');
+    }
+}
+
+// Utility function to announce messages to screen readers
+function announceToScreenReader(message) {
+    const announcer = document.getElementById('screen-reader-announcer');
+
+    if (!announcer) {
+        const newAnnouncer = document.createElement('div');
+        newAnnouncer.id = 'screen-reader-announcer';
+        newAnnouncer.setAttribute('aria-live', 'polite');
+        newAnnouncer.classList.add('sr-only');
+        document.body.appendChild(newAnnouncer);
+
+        setTimeout(() => {
+            newAnnouncer.textContent = message;
+        }, 100);
+    } else {
+        announcer.textContent = '';
+        setTimeout(() => {
+            announcer.textContent = message;
+        }, 100);
+    }
+
+    // Also use speech synthesis if enabled
+    if (window.textToSpeechActive) {
+        speakText(message);
+    }
+}
+
+// Setup navigation menu based on user role
 function setupNavigation(role) {
-    const nav = document.getElementById('main-nav');
+    const sidebarNav = document.getElementById('main-nav');
     let navHTML = '<ul>';
 
-    // Icons for each navigation item
-    const icons = {
-        dashboard: '<svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6z"/></svg>',
-        tickets: '<svg viewBox="0 0 24 24"><path d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/></svg>',
-        machines: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.5 14H8c-1.66 0-3-1.34-3-3s1.34-3 3-3l.14.01C8.58 8.28 10.13 7 12 7c2.21 0 4 1.79 4 4h.5c1.38 0 2.5 1.12 2.5 2.5S17.88 16 16.5 16z"/></svg>',
-        parts: '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>',
-        employees: '<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>'
-    };
+    // Common navigation items for all roles
+    navHTML += `
+        <li><a href="#" data-page="dashboard">
+            <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+            Dashboard
+        </a></li>
+        <li><a href="#" data-page="communications">
+            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+        </svg>
+            Comunicações
+        </a></li>
+        <li><a href="#" data-page="tickets">
+            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
+            Chamados
+        </a></li>
+    `;
 
-    switch (role) {
-        case 'operator':
-            navHTML += `
-                <li><a href="#" data-page="machines">${icons.machines} Máquinas</a></li>
-                <li><a href="#" data-page="tickets">${icons.tickets} Chamados</a></li>
-            `;
-            break;
-        case 'manager':
-            navHTML += `
-                <li><a href="#" data-page="dashboard">${icons.dashboard} Dashboard</a></li>
-                <li><a href="#" data-page="tickets">${icons.tickets} Chamados</a></li>
-                <li><a href="#" data-page="machines">${icons.machines} Máquinas</a></li>
-                <li><a href="#" data-page="parts">${icons.parts} Peças</a></li>
-                <li><a href="#" data-page="employees">${icons.employees} Colaboradores</a></li>
-            `;
-            break;
-        case 'technician':
-            navHTML += `
-                <li><a href="#" data-page="dashboard">${icons.dashboard} Dashboard</a></li>
-                <li><a href="#" data-page="tickets">${icons.tickets} Chamados</a></li>
-            `;
-            break;
+    // Role-specific navigation items
+    if (role === 'manager' || role === 'admin') {
+        navHTML += `
+            <li><a href="#" data-page="machines">
+                <svg viewBox="0 0 24 24"><path d="M19 3h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
+                Máquinas
+            </a></li>
+            <li><a href="#" data-page="parts">
+                <svg viewBox="0 0 24 24"><path d="M22 9V7h-2V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14v-2H4V9z"/>
+            </svg>
+                Peças
+            </a></li>
+            <li><a href="#" data-page="employees">
+                <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+            </svg>
+                Colaboradores
+            </a></li>
+            <li><a href="#" data-page="reports">
+                <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H5v-2h6v-3h2v5h6v-2h-6v-3h2v3z"/>
+            </svg>
+                Relatórios
+            </a></li>
+        `;
+    }
+
+    if (role === 'technician') {
+        navHTML += `
+            <li><a href="#" data-page="myTasks">
+                <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+            </svg>
+                Minhas Tarefas
+            </a></li>
+        `;
     }
 
     navHTML += '</ul>';
-    nav.innerHTML = navHTML;
+    sidebarNav.innerHTML = navHTML;
 
-    // Event listeners para navegação
-    nav.querySelectorAll('a').forEach(link => {
-        link.addEventListener('click', function (e) {
+    // Add event listeners to navigation links
+    document.querySelectorAll('#main-nav a').forEach(link => {
+        link.addEventListener('click', (e) => {
             e.preventDefault();
+            const page = link.getAttribute('data-page');
 
             // Remove active class from all links
-            nav.querySelectorAll('a').forEach(l => l.classList.remove('active'));
+            document.querySelectorAll('#main-nav a').forEach(l => l.classList.remove('active'));
 
             // Add active class to clicked link
-            this.classList.add('active');
+            link.classList.add('active');
 
-            const page = this.getAttribute('data-page');
-
-            // Clear all intervals when switching pages
-            clearAllIntervals();
-
+            // Load the selected page
             switch (page) {
-                case 'dashboard': loadDashboard(); break;
-                case 'tickets': loadTickets(); break;
-                case 'machines': loadMachines(); break;
-                case 'parts': loadParts(); break;
-                case 'employees': loadEmployees(); break;
+                case 'dashboard':
+                    loadDashboard();
+                    break;
+                case 'communications':
+                    loadCommunications();
+                    break;
+                case 'tickets':
+                    loadTickets();
+                    break;
+                case 'machines':
+                    loadMachines();
+                    break;
+                case 'parts':
+                    loadParts();
+                    break;
+                case 'employees':
+                    loadEmployees();
+                    break;
+                case 'reports':
+                    loadReports();
+                    break;
+                case 'myTasks':
+                    loadMyTasks();
+                    break;
             }
         });
     });
-
-    // Mark dashboard as active initially
-    const defaultLink = (role === 'operator') ?
-        nav.querySelector('a[data-page="machines"]') :
-        nav.querySelector('a[data-page="dashboard"]');
-
-    if (defaultLink) {
-        defaultLink.classList.add('active');
-    }
 }
 
-// Helper function to clear all intervals
-function clearAllIntervals() {
-    // Clear countdown timers
-    countdownIntervals.forEach(interval => clearInterval(interval));
-    countdownIntervals = [];
-}
-
-// Carregamento de páginas
-function loadDashboard() {
+// Load machines function
+function loadMachines() {
     const contentArea = document.getElementById('content-area');
 
-    let html = `
-        <div class="page-title">
-            <h2>Dashboard</h2>
-            <div class="export-options">
-                <button class="export-btn" id="export-dashboard-pdf">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                    Exportar para PDF
-                </button>
-                <button class="export-btn" id="export-dashboard-powerbi">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                        <line x1="8" y1="21" x2="16" y2="21"></line>
-                        <line x1="12" y1="17" x2="12" y2="21"></line>
-                    </svg>
-                    Exportar para Power BI
-                </button>
-            </div>
-        </div>
-        
-        <div class="dashboard-grid">
-            <div class="dashboard-card">
-                <h3>Total de Chamados</h3>
-                <p style="font-size: 2.5rem; font-weight: bold; color: var(--greek-blue-regular);">${mockTickets.length}</p>
-                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;">
-                    <span class="status-badge status-warning">${mockTickets.filter(t => t.status === 'open').length} Abertos</span>
-                    <span class="status-badge status-maintenance">${mockTickets.filter(t => t.status === 'inProgress').length} Em Andamento</span>
-                    <span class="status-badge status-ok">${mockTickets.filter(t => t.status === 'closed').length} Concluídos</span>
-                </div>
-            </div>
-            <div class="dashboard-card">
-                <h3>Máquinas com Problemas</h3>
-                <p style="font-size: 2.5rem; font-weight: bold; color: var(--greek-blue-regular);">${mockMachines.filter(m => m.status === 'maintenance').length}</p>
-                <p style="margin-top: 1rem;">Total de ${mockMachines.length} máquinas no sistema</p>
-            </div>
-            <div class="dashboard-card">
-                <h3>Manutenções Pendentes</h3>
-                <p style="font-size: 2.5rem; font-weight: bold; color: var(--greek-blue-regular);">${mockTickets.filter(t => t.status !== 'closed').length}</p>
-                <div class="progress-bar" style="margin-top: 1rem; height: 8px; background: rgba(119, 141, 169, 0.2); border-radius: 4px; overflow: hidden;">
-                    <div style="width: ${Math.round(mockTickets.filter(t => t.status === 'closed').length / mockTickets.length * 100)}%; height: 100%; background: var(--success-color);"></div>
-                </div>
-                <p style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">
-                    ${Math.round(mockTickets.filter(t => t.status === 'closed').length / mockTickets.length * 100)}% de chamados concluídos
-                </p>
-            </div>
-        </div>
-        
-        <div class="chart-container">
-            <h3>Status das Máquinas</h3>
-            <canvas id="machineStatusChart"></canvas>
-        </div>
-        
-        <div class="chart-container">
-            <h3>Evolução de Chamados</h3>
-            <canvas id="ticketsEvolutionChart"></canvas>
-        </div>
-        
-        <h3 style="margin-top: 2rem; margin-bottom: 1rem; color: var(--text-primary);">Máquinas com Mais Chamados</h3>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Máquina</th>
-                    <th>Setor</th>
-                    <th>Chamados na Semana</th>
-                    <th>Status</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-
-    mockMachines.forEach(machine => {
-        const ticketsCount = getWeeklyTicketsCount(machine.id);
-        const status = machine.status === 'maintenance' ? 'maintenance' : getMachineStatus(machine.id);
-
-        html += `
-            <tr>
-                <td>${machine.name}</td>
-                <td>${machine.sector}</td>
-                <td>${ticketsCount}</td>
-                <td><span class="status-badge ${getStatusClass(status)}">${getStatusLabel(status)}</span></td>
-                <td>
-                    <button class="action-btn view-machine" data-id="${machine.id}">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                        </svg>
-                        Ver
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `
-            </tbody>
-        </table>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners para exportação
-    document.getElementById('export-dashboard-pdf').addEventListener('click', function () {
-        const dashboardData = mockMachines.map(machine => ({
-            id: machine.id,
-            name: machine.name,
-            sector: machine.sector,
-            status: getMachineStatus(machine.id),
-            ticketsCount: getWeeklyTicketsCount(machine.id)
-        }));
-
-        exportToPDF(dashboardData, 'Dashboard de Máquinas', [
-            { key: 'id', header: 'ID' },
-            { key: 'name', header: 'Máquina' },
-            { key: 'sector', header: 'Setor' },
-            { key: 'status', header: 'Status' },
-            { key: 'ticketsCount', header: 'Chamados na Semana' }
-        ]);
-    });
-
-    document.getElementById('export-dashboard-powerbi').addEventListener('click', function () {
-        // Preparar dados para exportação
-        const dashboardData = mockMachines.map(machine => {
-            return {
-                id: machine.id,
-                name: machine.name,
-                sector: machine.sector,
-                status: machine.status,
-                statusHealth: getMachineStatus(machine.id),
-                ticketsCount: getWeeklyTicketsCount(machine.id)
-            };
-        });
-
-        exportToPowerBI(dashboardData, 'Dashboard_Maquinas');
-    });
-
-    // Add view machine event listeners
-    document.querySelectorAll('.view-machine').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const machineId = parseInt(this.getAttribute('data-id'));
-            viewMachine(machineId);
-        });
-    });
-
-    // Renderizar os gráficos
-    renderMachineStatusChart();
-    renderTicketsEvolutionChart();
-}
-
-function renderMachineStatusChart() {
-    const ctx = document.getElementById('machineStatusChart').getContext('2d');
-    const machineStatuses = mockMachines.map(m => getMachineStatus(m.id));
-    const statusCounts = {
-        ok: machineStatuses.filter(s => s === 'ok').length,
-        warning: machineStatuses.filter(s => s === 'warning').length,
-        critical: machineStatuses.filter(s => s === 'critical').length
-    };
-
-    // Chart.js options for dark/light mode
-    const textColor = darkMode ? '#e0e1dd' : '#1b263b';
-
-    // Destroy existing chart if it exists
-    if (window.machineStatusChartInstance) {
-        window.machineStatusChartInstance.destroy();
-    }
-
-    window.machineStatusChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['OK', 'Atenção', 'Crítico'],
-            datasets: [{
-                data: [statusCounts.ok, statusCounts.warning, statusCounts.critical],
-                backgroundColor: ['#2a9d8f', '#ffc857', '#e63946'],
-                borderColor: darkMode ? '#1e1e1e' : '#ffffff',
-                borderWidth: 2,
-                hoverOffset: 10
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: textColor,
-                        padding: 20,
-                        font: {
-                            size: 14
-                        }
-                    }
-                },
-                title: {
-                    display: false
-                },
-                tooltip: {
-                    backgroundColor: darkMode ? '#1e1e1e' : '#ffffff',
-                    titleColor: darkMode ? '#e0e1dd' : '#1b263b',
-                    bodyColor: darkMode ? '#e0e1dd' : '#1b263b',
-                    borderColor: darkMode ? '#333333' : '#e0e0e0',
-                    borderWidth: 1,
-                    padding: 12,
-                    displayColors: true,
-                    usePointStyle: true,
-                    callbacks: {
-                        label: function (context) {
-                            const label = context.label || '';
-                            const value = context.parsed || 0;
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                            return `${label}: ${value} (${percentage}%)`;
-                        }
-                    }
-                },
-                datalabels: {
-                    color: '#ffffff',
-                    font: {
-                        weight: 'bold',
-                        size: 14
-                    },
-                    formatter: (value, ctx) => {
-                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                        return percentage + '%';
-                    }
-                }
-            },
-            animations: {
-                tension: {
-                    duration: 1000,
-                    easing: 'easeInOutQuad',
-                    from: 1,
-                    to: 0
-                }
-            },
-            cutout: '65%'
-        },
-        plugins: [ChartDataLabels]
-    });
-}
-
-function renderTicketsEvolutionChart() {
-    const ctx = document.getElementById('ticketsEvolutionChart').getContext('2d');
-
-    // Generate last 7 days dates
-    const dates = [];
-    for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        dates.push(date);
-    }
-
-    // Count tickets by status for each day
-    const ticketData = {
-        open: [],
-        inProgress: [],
-        closed: []
-    };
-
-    dates.forEach(date => {
-        const dateString = date.toISOString().split('T')[0];
-
-        // Count tickets opened on this day
-        const openCount = mockTickets.filter(ticket => {
-            const ticketDate = new Date(ticket.createdAt).toISOString().split('T')[0];
-            return ticketDate === dateString && ticket.status === 'open';
-        }).length;
-
-        // Count tickets in progress on this day
-        const inProgressCount = mockTickets.filter(ticket => {
-            const ticketDate = new Date(ticket.createdAt).toISOString().split('T')[0];
-            return ticketDate === dateString && ticket.status === 'inProgress';
-        }).length;
-
-        // Count tickets closed on this day
-        const closedCount = mockTickets.filter(ticket => {
-            const ticketDate = new Date(ticket.createdAt).toISOString().split('T')[0];
-            return ticketDate === dateString && ticket.status === 'closed';
-        }).length;
-
-        ticketData.open.push(openCount);
-        ticketData.inProgress.push(inProgressCount);
-        ticketData.closed.push(closedCount);
-    });
-
-    // Format dates for labels
-    const labels = dates.map(date => {
-        return new Date(date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    });
-
-    // Chart.js options for dark/light mode
-    const textColor = darkMode ? '#e0e1dd' : '#1b263b';
-    const gridColor = darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
-
-    // Destroy existing chart if it exists
-    if (window.ticketsEvolutionChartInstance) {
-        window.ticketsEvolutionChartInstance.destroy();
-    }
-
-    window.ticketsEvolutionChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Abertos',
-                    data: ticketData.open,
-                    backgroundColor: 'rgba(255, 200, 87, 0.2)',
-                    borderColor: '#ffc857',
-                    borderWidth: 2,
-                    pointBackgroundColor: '#ffc857',
-                    pointBorderColor: '#ffffff',
-                    pointRadius: 5,
-                    pointHoverRadius: 7,
-                    tension: 0.3
-                },
-                {
-                    label: 'Em Andamento',
-                    data: ticketData.inProgress,
-                    backgroundColor: 'rgba(76, 201, 240, 0.2)',
-                    borderColor: '#4cc9f0',
-                    borderWidth: 2,
-                    pointBackgroundColor: '#4cc9f0',
-                    pointBorderColor: '#ffffff',
-                    pointRadius: 5,
-                    pointHoverRadius: 7,
-                    tension: 0.3
-                },
-                {
-                    label: 'Concluídos',
-                    data: ticketData.closed,
-                    backgroundColor: 'rgba(42, 157, 143, 0.2)',
-                    borderColor: '#2a9d8f',
-                    borderWidth: 2,
-                    pointBackgroundColor: '#2a9d8f',
-                    pointBorderColor: '#ffffff',
-                    pointRadius: 5,
-                    pointHoverRadius: 7,
-                    tension: 0.3
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    position: 'top',
-                    align: 'end',
-                    labels: {
-                        color: textColor,
-                        padding: 20,
-                        usePointStyle: true,
-                        pointStyleWidth: 12,
-                        font: {
-                            size: 12
-                        }
-                    }
-                },
-                tooltip: {
-                    backgroundColor: darkMode ? '#1e1e1e' : '#ffffff',
-                    titleColor: darkMode ? '#e0e1dd' : '#1b263b',
-                    bodyColor: darkMode ? '#e0e1dd' : '#1b263b',
-                    borderColor: darkMode ? '#333333' : '#e0e0e0',
-                    borderWidth: 1,
-                    padding: 12,
-                    displayColors: true,
-                    usePointStyle: true
-                }
-            },
-            scales: {
-                x: {
-                    ticks: {
-                        color: textColor
-                    },
-                    grid: {
-                        color: gridColor,
-                        drawBorder: false
-                    }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: textColor,
-                        precision: 0
-                    },
-                    grid: {
-                        color: gridColor,
-                        drawBorder: false
-                    }
-                }
-            },
-            animations: {
-                tension: {
-                    duration: 1000,
-                    easing: 'easeInOutQuad',
-                    from: 0.8,
-                    to: 0.3
-                }
-            },
-            interaction: {
-                mode: 'index',
-                intersect: false
-            }
+    // Prepare status labels for better display
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 'active': return '<span class="status-badge status-ok">Ativa</span>';
+            case 'maintenance': return '<span class="status-badge status-maintenance">Em Manutenção</span>';
+            case 'inactive': return '<span class="status-badge status-critical">Inativa</span>';
+            default: return '<span class="status-badge">Desconhecido</span>';
         }
-    });
-}
+    };
 
-function loadTickets() {
-    // ... existing tickets loading code ...
-    // Function implementation remains mostly the same
-    // Just update the visual appearance for better UI and add real-time updates
-
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
+    contentArea.innerHTML = `
         <div class="page-title">
-            <h2>Chamados</h2>
-            <div class="export-options">
-                <button class="export-btn" id="export-tickets-pdf">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                    Exportar para PDF
-                </button>
-                <button class="export-btn" id="export-tickets-powerbi">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                        <line x1="8" y1="21" x2="16" y2="21"></line>
-                        <line x1="12" y1="17" x2="12" y2="21"></line>
-                    </svg>
-                    Exportar para Power BI
-                </button>
-            </div>
-        </div>
-        
-        <div class="action-buttons">
-            <button id="new-ticket-btn" class="btn-primary">
+            <h2>Gerenciamento de Máquinas</h2>
+            <button id="new-machine-btn" class="btn-primary">
                 <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                 </svg>
-                Novo Chamado
+                Nova Máquina
             </button>
         </div>
         
         <div class="filter-container">
-            <h3>Filtros de Busca</h3>
+            <h3>Filtros</h3>
             <div class="filter-grid">
                 <div class="filter-group">
-                    <label for="filter-id">Número da Máquina:</label>
-                    <input type="number" id="filter-id" placeholder="Número da máquina">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-machine">Máquina:</label>
-                    <select id="filter-machine">
-                        <option value="">Todas as máquinas</option>
-                        ${mockMachines.map(machine => `<option value="${machine.id}">${machine.name}</option>`).join('')}
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="filter-status">Status:</label>
+                    <label for="filter-status">Status</label>
                     <select id="filter-status">
-                        <option value="">Todos os status</option>
-                        <option value="open">Aberto</option>
-                        <option value="inProgress">Em Andamento</option>
-                        <option value="closed">Concluído</option>
+                        <option value="">Todos</option>
+                        <option value="active">Ativa</option>
+                        <option value="maintenance">Em Manutenção</option>
+                        <option value="inactive">Inativa</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="filter-date-from">Data Inicial:</label>
-                    <input type="date" id="filter-date-from">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-date-to">Data Final:</label>
-                    <input type="date" id="filter-date-to">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-description">Descrição:</label>
-                    <input type="text" id="filter-description" placeholder="Buscar na descrição">
+                    <label for="filter-sector">Setor</label>
+                    <select id="filter-sector">
+                        <option value="">Todos</option>
+                        <option value="Produção">Produção</option>
+                        <option value="Logística">Logística</option>
+                        <option value="Moldagem">Moldagem</option>
+                    </select>
                 </div>
             </div>
             <div class="filter-actions">
                 <button id="apply-filters" class="btn-primary">Aplicar Filtros</button>
                 <button id="clear-filters" class="btn-secondary">Limpar Filtros</button>
-            </div>
-            <div class="help-text">Informe o número da máquina para preencher automaticamente os filtros relacionados</div>
-        </div>
-        
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Máquina</th>
-                    <th>Peça</th>
-                    <th>Descrição</th>
-                    <th>Data de Abertura</th>
-                    <th>Status</th>
-                    <th>Tempo Estimado</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody id="tickets-table-body">
-    `;
-
-    let filteredTickets = [...mockTickets]; // Inicialmente, mostra todos os chamados
-
-    mockTickets.forEach(ticket => {
-        const machine = mockMachines.find(m => m.id === ticket.machineId);
-        const part = mockParts.find(p => p.id === ticket.partId);
-
-        html += `
-            <tr>
-                <td>${ticket.id}</td>
-                <td>${machine ? machine.name : 'N/A'}</td>
-                <td>${part ? part.name : 'N/A'}</td>
-                <td>${ticket.description}</td>
-                <td>${getFormattedDate(ticket.createdAt)}</td>
-                <td><span class="status-badge ${getStatusClass(ticket.status)}">${getStatusLabel(ticket.status)}</span></td>
-                <td>${ticket.estimatedTime ? ticket.estimatedTime + ' min' : 'N/A'}</td>
-                <td>
-                    <button class="action-btn view-ticket" data-id="${ticket.id}">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                        </svg>
-                        Ver
-                    </button>
-                    ${currentUser.role === 'technician' && ticket.status === 'open' ?
-                `<button class="action-btn start-maintenance" data-id="${ticket.id}">
-                            <svg viewBox="0 0 24 24" width="18" height="18">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                            Iniciar
-                        </button>` : ''}
-                    ${currentUser.role === 'technician' && ticket.status === 'inProgress' ?
-                `<button class="action-btn finish-maintenance" data-id="${ticket.id}">
-                            <svg viewBox="0 0 24 24" width="18" height="18">
-                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                            </svg>
-                            Finalizar
-                        </button>` : ''}
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `
-            </tbody>
-        </table>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('new-ticket-btn').addEventListener('click', showNewTicketForm);
-
-    document.querySelectorAll('.view-ticket').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            viewTicket(ticketId);
-        });
-    });
-
-    document.querySelectorAll('.start-maintenance').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            startMaintenance(ticketId);
-        });
-    });
-
-    document.querySelectorAll('.finish-maintenance').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            finishMaintenance(ticketId);
-        });
-    });
-
-    // Filter event listeners
-    document.getElementById('apply-filters').addEventListener('click', applyTicketFilters);
-    document.getElementById('clear-filters').addEventListener('click', clearTicketFilters);
-
-    document.getElementById('export-tickets-pdf').addEventListener('click', function () {
-        // Use filtered tickets for export
-        const filteredTicketsData = filteredTickets.map(ticket => {
-            const machine = mockMachines.find(m => m.id === ticket.machineId);
-            const part = mockParts.find(p => p.id === ticket.partId);
-
-            return {
-                id: ticket.id,
-                machine: machine ? machine.name : 'N/A',
-                part: part ? part.name : 'N/A',
-                description: ticket.description,
-                createdAt: ticket.createdAt,
-                status: ticket.status,
-                estimatedTime: ticket.estimatedTime ? ticket.estimatedTime + ' min' : 'N/A'
-            };
-        });
-
-        exportToPDF(filteredTicketsData, 'Relatório de Chamados', [
-            { key: 'id', header: 'ID' },
-            { key: 'machine', header: 'Máquina' },
-            { key: 'part', header: 'Peça' },
-            { key: 'description', header: 'Descrição' },
-            { key: 'createdAt', header: 'Data de Abertura' },
-            { key: 'status', header: 'Status' },
-            { key: 'estimatedTime', header: 'Tempo Estimado' }
-        ]);
-    });
-
-    document.getElementById('export-tickets-powerbi').addEventListener('click', function () {
-        // Use filtered tickets for export
-        const filteredTicketsData = filteredTickets.map(ticket => {
-            const machine = mockMachines.find(m => m.id === ticket.machineId);
-            const part = mockParts.find(p => p.id === ticket.partId);
-            const assignedTo = ticket.assignedTo ? mockUsers.find(u => u.id === ticket.assignedTo) : null;
-
-            return {
-                id: ticket.id,
-                machineId: ticket.machineId,
-                machineName: machine ? machine.name : 'N/A',
-                partId: ticket.partId,
-                partName: part ? part.name : 'N/A',
-                description: ticket.description,
-                createdBy: ticket.createdBy,
-                status: ticket.status,
-                createdAt: ticket.createdAt,
-                assignedTo: ticket.assignedTo,
-                assignedToName: assignedTo ? assignedTo.name : 'N/A',
-                startedAt: ticket.startedAt,
-                estimatedTime: ticket.estimatedTime,
-                finishedAt: ticket.finishedAt
-            };
-        });
-
-        exportToPowerBI(filteredTicketsData, 'Chamados');
-    });
-
-    // Simulate real-time updates
-    setTimeout(() => {
-        if (Math.random() > 0.5 && currentUser.role === 'technician') {
-            // Show notification for new assignment
-            showNotification(
-                'Novo chamado atribuído',
-                'Você recebeu um novo chamado para manutenção.',
-                'info'
-            );
-
-            // Update the table to reflect the new assignment
-            updateTicketsTable(mockTickets);
-        }
-    }, 10000);
-}
-
-// Keep implementing the remaining functions (viewTicket, startMaintenance, etc.)
-// These are mostly the same as before but with updated UI components
-// and real-time notification features
-
-// Example for viewTicket with new UI elements:
-function viewTicket(ticketId) {
-    const ticket = mockTickets.find(t => t.id === ticketId);
-    if (!ticket) {
-        showNotification('Erro', 'Chamado não encontrado!', 'error');
-        return;
-    }
-
-    const machine = mockMachines.find(m => m.id === ticket.machineId);
-    const part = mockParts.find(p => p.id === ticket.partId);
-    const creator = mockUsers.find(u => u.id === ticket.createdBy);
-    const assignedTo = ticket.assignedTo ? mockUsers.find(u => u.id === ticket.assignedTo) : null;
-
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Chamado #${ticket.id}</h2>
-            <button id="back-to-tickets" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-grid">
-            <div class="form-section">
-                <h3>Informações do Chamado</h3>
-                <div class="ticket-details">
-                    <div class="detail-row">
-                        <div class="detail-label">Máquina:</div>
-                        <div class="detail-value">${machine ? machine.name : 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Peça:</div>
-                        <div class="detail-value">${part ? part.name : 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Descrição:</div>
-                        <div class="detail-value">${ticket.description}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Criado por:</div>
-                        <div class="detail-value">${creator ? creator.name : 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Data de Abertura:</div>
-                        <div class="detail-value">${getFormattedDate(ticket.createdAt)}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Status:</div>
-                        <div class="detail-value">
-                            <span class="status-badge ${getStatusClass(ticket.status)}">${getStatusLabel(ticket.status)}</span>
-                        </div>
-                    </div>
-                    
-                    ${assignedTo ? `
-                    <div class="detail-row">
-                        <div class="detail-label">Técnico Responsável:</div>
-                        <div class="detail-value">${assignedTo.name}</div>
-                    </div>
-                    ` : ''}
-                    
-                    ${ticket.startedAt ? `
-                    <div class="detail-row">
-                        <div class="detail-label">Iniciado em:</div>
-                        <div class="detail-value">${getFormattedDate(ticket.startedAt)}</div>
-                    </div>
-                    ` : ''}
-                    
-                    ${ticket.estimatedTime ? `
-                    <div class="detail-row">
-                        <div class="detail-label">Tempo Estimado:</div>
-                        <div class="detail-value">${ticket.estimatedTime} minutos</div>
-                    </div>
-                    ` : ''}
-                    
-                    ${ticket.finishedAt ? `
-                    <div class="detail-row">
-                        <div class="detail-label">Concluído em:</div>
-                        <div class="detail-value">${getFormattedDate(ticket.finishedAt)}</div>
-                    </div>
-                    ` : ''}
-                </div>
-                
-                ${ticket.status === 'inProgress' ? `
-                <div class="timer-display">
-                    <h4>Tempo Estimado para Conclusão</h4>
-                    <div class="countdown" id="maintenance-countdown">Calculando...</div>
-                </div>
-                ` : ''}
-                
-                <div class="action-buttons">
-                    ${currentUser.role === 'technician' && ticket.status === 'open' ?
-            `<button id="start-maintenance-btn" class="btn-info" data-id="${ticket.id}">
-                            <svg viewBox="0 0 24 24" width="18" height="18">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                            Iniciar Manutenção
-                        </button>` : ''}
-                    ${currentUser.role === 'technician' && ticket.status === 'inProgress' && ticket.assignedTo === currentUser.id ?
-            `<button id="finish-maintenance-btn" class="btn-success" data-id="${ticket.id}">
-                            <svg viewBox="0 0 24 24" width="18" height="18">
-                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                            </svg>
-                            Finalizar Manutenção
-                        </button>` : ''}
-                </div>
-            </div>
-            
-            ${ticket.status === 'inProgress' ? `
-            <div class="form-section">
-                <h3>Progresso da Manutenção</h3>
-                <div class="maintenance-progress">
-                    <div class="progress-indicator">
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" id="maintenance-progress-bar" style="width: 0%"></div>
-                        </div>
-                        <div class="progress-label" id="maintenance-progress-label">Calculando...</div>
-                    </div>
-                    
-                    <div class="maintenance-stats">
-                        <div class="stat-item">
-                            <div class="stat-label">Iniciado</div>
-                            <div class="stat-value">${getFormattedDate(ticket.startedAt)}</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Estimativa</div>
-                            <div class="stat-value">${ticket.estimatedTime} min</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Técnico</div>
-                            <div class="stat-value">${assignedTo ? assignedTo.name : 'N/A'}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            ` : ''}
-        </div>
-    `;
-
-    // Add custom styles for ticket details
-    html += `
-        <style>
-            .ticket-details {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-            }
-            .detail-row {
-                display: flex;
-                border-bottom: 1px solid var(--border-color);
-                padding-bottom: 0.5rem;
-            }
-            .detail-label {
-                font-weight: 600;
-                min-width: 180px;
-                color: var(--greek-blue-regular);
-            }
-            .detail-value {
-                flex: 1;
-            }
-            .maintenance-progress {
-                padding: 1rem 0;
-            }
-            .progress-indicator {
-                margin-bottom: 2rem;
-            }
-            .progress-bar-container {
-                width: 100%;
-                height: 8px;
-                background-color: rgba(119, 141, 169, 0.2);
-                border-radius: 4px;
-                overflow: hidden;
-                margin-bottom: 0.5rem;
-            }
-            .progress-bar {
-                height: 100%;
-                background-color: var(--greek-blue-regular);
-                border-radius: 4px;
-                transition: width 1s ease;
-            }
-            .progress-label {
-                font-size: 0.9rem;
-                color: var(--text-secondary);
-                text-align: right;
-            }
-            .maintenance-stats {
-                display: flex;
-                justify-content: space-between;
-                margin-top: 1rem;
-            }
-            .stat-item {
-                text-align: center;
-                background-color: rgba(119, 141, 169, 0.1);
-                padding: 1rem;
-                border-radius: 8px;
-                flex: 1;
-                margin: 0 0.5rem;
-            }
-            .stat-label {
-                font-size: 0.85rem;
-                color: var(--text-secondary);
-                margin-bottom: 0.5rem;
-            }
-            .stat-value {
-                font-weight: 600;
-                color: var(--greek-blue-regular);
-            }
-            @media (max-width: 768px) {
-                .maintenance-stats {
-                    flex-direction: column;
-                    gap: 1rem;
-                }
-                .stat-item {
-                    margin: 0;
-                }
-            }
-        </style>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-tickets').addEventListener('click', () => loadTickets());
-
-    if (currentUser.role === 'technician' && ticket.status === 'open') {
-        document.getElementById('start-maintenance-btn').addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            startMaintenance(ticketId);
-        });
-    }
-
-    if (currentUser.role === 'technician' && ticket.status === 'inProgress' && ticket.assignedTo === currentUser.id) {
-        document.getElementById('finish-maintenance-btn').addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            finishMaintenance(ticketId);
-        });
-    }
-
-    // Atualizar countdown se o chamado estiver em andamento
-    if (ticket.status === 'inProgress' && ticket.estimatedTime) {
-        updateMaintenanceCountdown(ticket);
-    }
-}
-
-function updateMaintenanceCountdown(ticket) {
-    const countdownElement = document.getElementById('maintenance-countdown');
-    const progressBar = document.getElementById('maintenance-progress-bar');
-    const progressLabel = document.getElementById('maintenance-progress-label');
-
-    if (!countdownElement) return;
-
-    const startTime = new Date(ticket.startedAt).getTime();
-    const estimatedEndTime = startTime + (ticket.estimatedTime * 60 * 1000);
-
-    // Atualizar a cada segundo
-    const countdownInterval = setInterval(() => {
-        const now = new Date().getTime();
-        const timeLeft = estimatedEndTime - now;
-        const elapsedTime = now - startTime;
-        const totalTime = ticket.estimatedTime * 60 * 1000;
-
-        // Calculate progress percentage
-        const progressPercentage = Math.min(100, Math.round((elapsedTime / totalTime) * 100));
-
-        if (progressBar) {
-            progressBar.style.width = `${progressPercentage}%`;
-
-            // Change color based on progress
-            if (progressPercentage < 60) {
-                progressBar.style.backgroundColor = 'var(--greek-blue-regular)';
-            } else if (progressPercentage < 90) {
-                progressBar.style.backgroundColor = 'var(--warning-color)';
-            } else {
-                progressBar.style.backgroundColor = 'var(--danger-color)';
-            }
-        }
-
-        if (progressLabel) {
-            progressLabel.textContent = `${progressPercentage}% concluído`;
-        }
-
-        if (timeLeft <= 0) {
-            clearInterval(countdownInterval);
-            countdownElement.innerHTML = 'Tempo estimado excedido';
-            countdownElement.classList.add('ended');
-
-            if (progressBar) {
-                progressBar.style.width = '100%';
-                progressBar.style.backgroundColor = 'var(--danger-color)';
-            }
-
-            if (progressLabel) {
-                progressLabel.textContent = 'Tempo excedido';
-            }
-
-            // Show notification
-            showNotification(
-                'Tempo excedido',
-                `O tempo de manutenção do chamado #${ticket.id} foi excedido!`,
-                'warning'
-            );
-
-            return;
-        }
-
-        // Last 10% of time, show warning
-        if (timeLeft < (totalTime * 0.1) && !countdownElement.classList.contains('ending')) {
-            countdownElement.classList.add('ending');
-
-            // Show notification
-            showNotification(
-                'Alerta de tempo',
-                `O chamado #${ticket.id} está próximo do tempo limite!`,
-                'warning'
-            );
-        }
-
-        // Calcular horas, minutos e segundos
-        const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-        const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-
-        // Exibir no formato HH:MM:SS
-        countdownElement.innerHTML = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }, 1000);
-
-    // Add to the list of intervals to clear when navigating away
-    countdownIntervals.push(countdownInterval);
-}
-
-// Implement remaining functions...
-// The functionality stays the same but we'll enhance the UI
-
-// Export functions (PDF and PowerBI) stay mostly the same
-
-function exportToPDF(data, title, columns) {
-    // Show progress notification
-    const notification = showNotification('Exportando...', 'Gerando arquivo PDF, aguarde.', 'info');
-
-    setTimeout(() => {
-        try {
-            const doc = new jspdf.jsPDF();
-
-            // Configure title and date
-            doc.setFontSize(18);
-            doc.text(title, 14, 20);
-
-            doc.setFontSize(11);
-            doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-            doc.text(`Usuário: ${currentUser.name}`, 14, 37);
-
-            // Configure table
-            doc.autoTable({
-                startY: 45,
-                head: [columns.map(col => col.header)],
-                body: data.map(item => columns.map(col => {
-                    // Special formatting for status
-                    if (col.key === 'status') {
-                        return getStatusLabel(item[col.key]);
-                    }
-                    // Special formatting for dates
-                    if (col.key.toLowerCase().includes('date') || col.key.toLowerCase().includes('at')) {
-                        return item[col.key] ? getFormattedDate(item[col.key]) : 'N/A';
-                    }
-                    return item[col.key] !== undefined ? item[col.key].toString() : 'N/A';
-                })),
-                theme: 'striped',
-                headStyles: {
-                    fillColor: [27, 38, 59], // Greek blue
-                    textColor: 255
-                },
-                styles: {
-                    fontSize: 9,
-                    cellPadding: 3
-                }
-            });
-
-            // Footer
-            const pageCount = doc.internal.getNumberOfPages();
-            for (let i = 1; i <= pageCount; i++) {
-                doc.setPage(i);
-
-                // Add footer
-                doc.setFontSize(8);
-                doc.text(`Sistema de Chamados - Página ${i} de ${pageCount}`,
-                    doc.internal.pageSize.width / 2,
-                    doc.internal.pageSize.height - 10,
-                    { align: 'center' });
-            }
-
-            // Save the file
-            doc.save(`${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
-
-            // Update notification
-            notification.querySelector('.notification-title').textContent = 'PDF Gerado';
-            notification.querySelector('.notification-message').textContent = 'O arquivo PDF foi gerado com sucesso!';
-            notification.classList.remove('info');
-            notification.classList.add('success');
-        } catch (error) {
-            // Show error notification
-            showNotification('Erro ao Exportar', 'Erro ao gerar PDF: ' + error.message, 'error');
-            console.error('Erro ao gerar PDF:', error);
-        }
-    }, 800);
-}
-
-function exportToPowerBI(data, title) {
-    // Show progress notification
-    const notification = showNotification('Exportando...', 'Preparando dados para o Power BI, aguarde.', 'info');
-
-    setTimeout(() => {
-        try {
-            // Convert to CSV
-            let csv = '';
-
-            // Headers
-            const headers = Object.keys(data[0]);
-            csv += headers.join(',') + '\r\n';
-
-            // Data
-            data.forEach(row => {
-                const values = headers.map(header => {
-                    const value = row[header];
-
-                    // Special formatting for dates
-                    if (header.toLowerCase().includes('date') || header.toLowerCase().includes('at')) {
-                        return value ? `"${new Date(value).toISOString()}"` : '""';
-                    }
-
-                    // Escape strings
-                    if (typeof value === 'string') {
-                        return `"${value.replace(/"/g, '""')}"`;
-                    }
-
-                    return value !== undefined ? value : '';
-                });
-
-                csv += values.join(',') + '\r\n';
-            });
-
-            // Create blob and generate download
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            saveAs(blob, `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
-
-            // Update notification
-            notification.querySelector('.notification-title').textContent = 'Dados Exportados';
-            notification.querySelector('.notification-message').textContent = 'Os dados foram exportados para CSV com sucesso!';
-            notification.classList.remove('info');
-            notification.classList.add('success');
-
-            // Show instructions
-            setTimeout(() => {
-                showPowerBIInstructionsModal();
-            }, 1000);
-        } catch (error) {
-            // Show error notification
-            showNotification('Erro ao Exportar', 'Erro ao exportar para o Power BI: ' + error.message, 'error');
-            console.error('Erro ao exportar para o Power BI:', error);
-        }
-    }, 800);
-}
-
-function showPowerBIInstructionsModal() {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.id = 'export-modal';
-
-    modal.innerHTML = `
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Exportação Concluída</h3>
-                <button class="modal-close" onclick="document.getElementById('export-modal').remove()">&times;</button>
-            </div>
-            <div>
-                <p>Arquivo CSV gerado com sucesso!</p>
-                <h4 style="margin-top: 1rem;">Como importar no Power BI:</h4>
-                <ol style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                    <li>Abra o Power BI Desktop</li>
-                    <li>Clique em "Obter dados" e selecione "Texto/CSV"</li>
-                    <li>Selecione o arquivo CSV que acabou de baixar</li>
-                    <li>Clique em "Carregar" ou ajuste as configurações conforme necessário</li>
-                    <li>Seus dados estão prontos para visualização!</li>
-                </ol>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(modal);
-}
-
-// Apply ticket filters
-function applyTicketFilters() {
-    const filterId = document.getElementById('filter-id').value;
-
-    // Clear all filters first
-    document.getElementById('filter-machine').value = '';
-    document.getElementById('filter-status').value = '';
-    document.getElementById('filter-date-from').value = '';
-    document.getElementById('filter-date-to').value = '';
-    document.getElementById('filter-description').value = '';
-
-    // If machine ID is entered...
-    if (filterId) {
-        const filteredTickets = mockTickets.filter(ticket =>
-            ticket.machineId === parseInt(filterId)
-        );
-
-        // Try to find first ticket with this machine
-        const sampleTicket = filteredTickets[0];
-        if (sampleTicket) {
-            // Auto-fill machine
-            document.getElementById('filter-machine').value = sampleTicket.machineId;
-
-            // Auto-fill status if all matching tickets have same status
-            const uniqueStatus = new Set(filteredTickets.map(t => t.status));
-            if (uniqueStatus.size === 1) {
-                document.getElementById('filter-status').value = [...uniqueStatus][0];
-            }
-
-            // Show notification about auto-filled filters
-            showNotification(
-                'Filtros preenchidos',
-                `Filtros atualizados para a máquina ${mockMachines.find(m => m.id === parseInt(filterId))?.name || 'selecionada'}`,
-                'info'
-            );
-        } else {
-            showNotification(
-                'Nenhum resultado',
-                'Não foram encontrados tickets para a máquina informada',
-                'warning'
-            );
-        }
-
-        // Show tickets table with filtered by machine
-        updateTicketsTable(filteredTickets);
-
-    } else {
-        // Original filter logic (without ID search)
-        const filterMachine = document.getElementById('filter-machine').value;
-        const filterStatus = document.getElementById('filter-status').value;
-        const filterDateFrom = document.getElementById('filter-date-from').value;
-        const filterDateTo = document.getElementById('filter-date-to').value;
-        const filterDescription = document.getElementById('filter-description').value.toLowerCase();
-
-        let filteredTickets = mockTickets.filter(ticket => {
-            // Filtro por ID
-            if (filterMachine && ticket.machineId !== parseInt(filterMachine)) {
-                return false;
-            }
-
-            // Filtro por status
-            if (filterStatus && ticket.status !== filterStatus) {
-                return false;
-            }
-
-            // Filtro por data inicial
-            if (filterDateFrom) {
-                const dateFrom = new Date(filterDateFrom);
-                dateFrom.setHours(0, 0, 0, 0);
-                if (new Date(ticket.createdAt) < dateFrom) {
-                    return false;
-                }
-            }
-
-            // Filtro por data final
-            if (filterDateTo) {
-                const dateTo = new Date(filterDateTo);
-                dateTo.setHours(23, 59, 59, 999);
-                if (new Date(ticket.createdAt) > dateTo) {
-                    return false;
-                }
-            }
-
-            // Filtro por descrição
-            if (filterDescription && !ticket.description.toLowerCase().includes(filterDescription)) {
-                return false;
-            }
-
-            return true;
-        });
-
-        // Atualizar a tabela com os resultados filtrados
-        updateTicketsTable(filteredTickets);
-
-        // Show notification about filter results
-        showNotification(
-            'Filtros aplicados',
-            `${filteredTickets.length} chamados encontrados`,
-            'info'
-        );
-    }
-}
-
-// Função para limpar os filtros
-function clearTicketFilters() {
-    document.getElementById('filter-id').value = '';
-    document.getElementById('filter-machine').value = '';
-    document.getElementById('filter-status').value = '';
-    document.getElementById('filter-date-from').value = '';
-    document.getElementById('filter-date-to').value = '';
-    document.getElementById('filter-description').value = '';
-
-    // Mostrar todos os chamados
-    updateTicketsTable(mockTickets);
-
-    // Show notification
-    showNotification('Filtros limpos', 'Todos os filtros foram removidos', 'info');
-}
-
-// Continue with updateTicketsTable, showing the other functions like loadMachines, etc.
-// ...
-
-function showNewTicketForm() {
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Novo Chamado</h2>
-            <button id="back-to-tickets" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações do Chamado</h3>
-            <form id="new-ticket-form">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="machine-select">Máquina:</label>
-                        <select id="machine-select" required>
-                            <option value="">Selecione uma máquina</option>
-                            ${mockMachines.map(machine => `
-                                <option value="${machine.id}">${machine.name} (${machine.sector})</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="part-select">Peça:</label>
-                        <select id="part-select" required disabled>
-                            <option value="">Selecione uma peça</option>
-                        </select>
-                        <div class="help-text">Selecione uma máquina primeiro</div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="maintenance-type">Tipo de Manutenção:</label>
-                        <select id="maintenance-type" required disabled>
-                            <option value="">Selecione um tipo</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="ticket-description">Descrição do Problema:</label>
-                    <textarea id="ticket-description" rows="4" required placeholder="Descreva o problema ou situação que requer manutenção..."></textarea>
-                </div>
-                
-                <div class="timer-display" id="estimated-time-display" style="display: none;">
-                    <h4>Tempo Estimado para Manutenção</h4>
-                    <div class="countdown" id="estimated-time">--:--</div>
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Criar Chamado
-                    </button>
-                    <button type="button" id="cancel-ticket" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-tickets').addEventListener('click', loadTickets);
-    document.getElementById('cancel-ticket').addEventListener('click', loadTickets);
-
-    const machineSelect = document.getElementById('machine-select');
-    const partSelect = document.getElementById('part-select');
-    const maintenanceTypeSelect = document.getElementById('maintenance-type');
-    const estimatedTimeDisplay = document.getElementById('estimated-time-display');
-    const estimatedTime = document.getElementById('estimated-time');
-
-    // When machine is selected, populate parts dropdown
-    machineSelect.addEventListener('change', function () {
-        const machineId = parseInt(this.value);
-
-        if (machineId) {
-            // Filter parts for this machine
-            const machineParts = mockParts.filter(part => part.machineId === machineId);
-
-            // Enable and populate parts dropdown
-            partSelect.disabled = false;
-            partSelect.innerHTML = '<option value="">Selecione uma peça</option>' +
-                machineParts.map(part => `<option value="${part.id}">${part.name}</option>`).join('');
-
-            // Reset maintenance type
-            maintenanceTypeSelect.innerHTML = '<option value="">Selecione um tipo</option>';
-            maintenanceTypeSelect.disabled = true;
-
-            // Hide estimated time
-            estimatedTimeDisplay.style.display = 'none';
-        } else {
-            // Reset and disable dropdowns
-            partSelect.innerHTML = '<option value="">Selecione uma peça</option>';
-            partSelect.disabled = true;
-            maintenanceTypeSelect.innerHTML = '<option value="">Selecione um tipo</option>';
-            maintenanceTypeSelect.disabled = true;
-            estimatedTimeDisplay.style.display = 'none';
-        }
-    });
-
-    // When part is selected, populate maintenance types
-    partSelect.addEventListener('change', function () {
-        const partId = parseInt(this.value);
-
-        if (partId) {
-            // Filter maintenance types for this part
-            const partMaintenanceTypes = mockMaintenanceTimes.filter(mt => mt.partId === partId);
-
-            // Enable and populate maintenance type dropdown
-            maintenanceTypeSelect.disabled = false;
-            maintenanceTypeSelect.innerHTML = '<option value="">Selecione um tipo</option>' +
-                partMaintenanceTypes.map((mt, index) => `<option value="${index}">${mt.maintenanceType} (${mt.estimatedTime} min)</option>`).join('');
-
-            // Hide estimated time
-            estimatedTimeDisplay.style.display = 'none';
-        } else {
-            // Reset and disable maintenance type
-            maintenanceTypeSelect.innerHTML = '<option value="">Selecione um tipo</option>';
-            maintenanceTypeSelect.disabled = true;
-            estimatedTimeDisplay.style.display = 'none';
-        }
-    });
-
-    // When maintenance type is selected, show estimated time
-    maintenanceTypeSelect.addEventListener('change', function () {
-        const partId = parseInt(partSelect.value);
-        const maintenanceTypeIndex = parseInt(this.value);
-
-        if (!isNaN(maintenanceTypeIndex) && partId) {
-            // Get maintenance details
-            const partMaintenanceTypes = mockMaintenanceTimes.filter(mt => mt.partId === partId);
-            const selectedMaintenance = partMaintenanceTypes[maintenanceTypeIndex];
-
-            if (selectedMaintenance) {
-                // Show estimated time
-                const minutes = selectedMaintenance.estimatedTime;
-                const hours = Math.floor(minutes / 60);
-                const remainingMinutes = minutes % 60;
-
-                estimatedTime.textContent = `${hours.toString().padStart(2, '0')}:${remainingMinutes.toString().padStart(2, '0')}`;
-                estimatedTimeDisplay.style.display = 'flex';
-            } else {
-                estimatedTimeDisplay.style.display = 'none';
-            }
-        } else {
-            estimatedTimeDisplay.style.display = 'none';
-        }
-    });
-
-    // Form submission
-    document.getElementById('new-ticket-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        const machineId = parseInt(machineSelect.value);
-        const partId = parseInt(partSelect.value);
-        const maintenanceTypeIndex = parseInt(maintenanceTypeSelect.value);
-        const description = document.getElementById('ticket-description').value.trim();
-
-        if (!machineId || !partId || isNaN(maintenanceTypeIndex) || !description) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
-
-        // Get maintenance details
-        const partMaintenanceTypes = mockMaintenanceTimes.filter(mt => mt.partId === partId);
-        const selectedMaintenance = partMaintenanceTypes[maintenanceTypeIndex];
-
-        if (!selectedMaintenance) {
-            showNotification('Erro', 'Tipo de manutenção inválido.', 'error');
-            return;
-        }
-
-        // Create new ticket
-        const newTicket = {
-            id: mockTickets.length + 1,
-            machineId,
-            partId,
-            maintenanceTypeId: selectedMaintenance.id,
-            description,
-            createdBy: currentUser.id,
-            status: 'open',
-            createdAt: new Date(),
-            assignedTo: null,
-            startedAt: null,
-            estimatedTime: null,
-            finishedAt: null
-        };
-
-        // Add to mock data
-        mockTickets.push(newTicket);
-
-        // Show notification
-        showNotification('Sucesso', 'Chamado criado com sucesso!', 'success');
-
-        // Return to tickets list
-        loadTickets();
-    });
-}
-
-function startMaintenance(ticketId) {
-    const ticket = mockTickets.find(t => t.id === ticketId);
-    if (!ticket) {
-        showNotification('Erro', 'Chamado não encontrado!', 'error');
-        return;
-    }
-
-    // Get the corresponding maintenance type for the ticket
-    const maintenanceType = mockMaintenanceTimes.find(mt =>
-        mt.partId === ticket.partId &&
-        (ticket.maintenanceTypeId ? mt.id === ticket.maintenanceTypeId : mt.maintenanceType.toLowerCase().includes("reparo"))
-    );
-
-    // Update ticket
-    ticket.status = 'inProgress';
-    ticket.assignedTo = currentUser.id;
-    ticket.startedAt = new Date();
-    ticket.estimatedTime = maintenanceType ? maintenanceType.estimatedTime : 60; // Default 60 minutes if not found
-
-    // Show notification
-    showNotification('Manutenção Iniciada', `Manutenção iniciada para o chamado #${ticketId}`, 'info');
-
-    // Refresh the view
-    if (document.querySelector('.view-ticket[data-id="' + ticketId + '"]')) {
-        viewTicket(ticketId);
-    } else {
-        loadTickets();
-    }
-}
-
-function finishMaintenance(ticketId) {
-    const ticket = mockTickets.find(t => t.id === ticketId);
-    if (!ticket) {
-        showNotification('Erro', 'Chamado não encontrado!', 'error');
-        return;
-    }
-
-    // Update ticket
-    ticket.status = 'closed';
-    ticket.finishedAt = new Date();
-
-    // Update machine status if needed
-    const machine = mockMachines.find(m => m.id === ticket.machineId);
-    if (machine && machine.status === 'maintenance') {
-        // Check if there are other open tickets for this machine
-        const otherOpenTickets = mockTickets.filter(t =>
-            t.id !== ticketId &&
-            t.machineId === machine.id &&
-            t.status !== 'closed'
-        );
-
-        if (otherOpenTickets.length === 0) {
-            machine.status = 'active';
-        }
-    }
-
-    // Show notification
-    showNotification('Manutenção Concluída', `Manutenção concluída para o chamado #${ticketId}`, 'success');
-
-    // Refresh the view
-    if (document.querySelector('.view-ticket[data-id="' + ticketId + '"]')) {
-        viewTicket(ticketId);
-    } else {
-        loadTickets();
-    }
-}
-
-function updateTicketsTable(filteredTickets) {
-    const tableBody = document.getElementById('tickets-table-body');
-    if (!tableBody) return;
-
-    // Clear existing rows
-    tableBody.innerHTML = '';
-
-    if (filteredTickets.length === 0) {
-        // No results
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="8" class="help-noresult">Nenhum chamado encontrado com os filtros aplicados</td>
-            </tr>
-        `;
-        return;
-    }
-
-    filteredTickets.forEach(ticket => {
-        const machine = mockMachines.find(m => m.id === ticket.machineId);
-        const part = mockParts.find(p => p.id === ticket.partId);
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${ticket.id}</td>
-            <td>${machine ? machine.name : 'N/A'}</td>
-            <td>${part ? part.name : 'N/A'}</td>
-            <td>${ticket.description}</td>
-            <td>${getFormattedDate(ticket.createdAt)}</td>
-            <td><span class="status-badge ${getStatusClass(ticket.status)}">${getStatusLabel(ticket.status)}</span></td>
-            <td>${ticket.estimatedTime ? ticket.estimatedTime + ' min' : 'N/A'}</td>
-            <td>
-                <button class="action-btn view-ticket" data-id="${ticket.id}">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                    </svg>
-                    Ver
-                </button>
-                ${currentUser.role === 'technician' && ticket.status === 'open' ?
-                `<button class="action-btn start-maintenance" data-id="${ticket.id}">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M8 5v14l11-7z"/>
-                        </svg>
-                        Iniciar
-                    </button>` : ''}
-                ${currentUser.role === 'technician' && ticket.status === 'inProgress' ?
-                `<button class="action-btn finish-maintenance" data-id="${ticket.id}">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Finalizar
-                    </button>` : ''}
-            </td>
-        `;
-
-        tableBody.appendChild(row);
-    });
-
-    // Add event listeners to new buttons
-    document.querySelectorAll('.view-ticket').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            viewTicket(ticketId);
-        });
-    });
-
-    document.querySelectorAll('.start-maintenance').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            startMaintenance(ticketId);
-        });
-    });
-
-    document.querySelectorAll('.finish-maintenance').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            finishMaintenance(ticketId);
-        });
-    });
-}
-
-function loadMachines() {
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Máquinas</h2>
-            <div class="export-options">
-                <button class="export-btn" id="export-machines-pdf">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                    Exportar para PDF
-                </button>
-            </div>
-        </div>
-        
-        ${currentUser.role === 'manager' ? `
-        <div class="action-buttons">
-            <button id="new-machine-btn" class="btn-primary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                </svg>
-                Nova Máquina
-            </button>
-        </div>
-        ` : ''}
-        
-        <div class="filter-container">
-            <h3>Filtros de Busca</h3>
-            <div class="filter-grid">
-                <div class="filter-group">
-                    <label for="filter-machine-id">Número da Máquina:</label>
-                    <input type="number" id="filter-machine-id" placeholder="Buscar por número">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-machine-name">Nome da Máquina:</label>
-                    <input type="text" id="filter-machine-name" placeholder="Digite o nome da máquina">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-machine-sector">Setor:</label>
-                    <select id="filter-machine-sector">
-                        <option value="">Todos os setores</option>
-                        ${[...new Set(mockMachines.map(m => m.sector))].map(sector =>
-        `<option value="${sector}">${sector}</option>`
-    ).join('')}
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="filter-machine-status">Status:</label>
-                    <select id="filter-machine-status">
-                        <option value="">Todos os status</option>
-                        <option value="active">Ativa</option>
-                        <option value="maintenance">Em Manutenção</option>
-                    </select>
-                </div>
-            </div>
-            <div class="filter-actions">
-                <button id="apply-machine-filters" class="btn-primary">Aplicar Filtros</button>
-                <button id="clear-machine-filters" class="btn-secondary">Limpar Filtros</button>
-            </div>
-        </div>
-        
-        <div class="dashboard-grid">
-            <div class="dashboard-card">
-                <h3>Total de Máquinas</h3>
-                <p style="font-size: 2.5rem; font-weight: bold; color: var(--greek-blue-regular);">${mockMachines.length}</p>
-                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;">
-                    <span class="status-badge status-ok">${mockMachines.filter(m => m.status === 'active').length} Ativas</span>
-                    <span class="status-badge status-maintenance">${mockMachines.filter(m => m.status === 'maintenance').length} Em Manutenção</span>
-                </div>
-            </div>
-            
-            <div class="dashboard-card">
-                <h3>Chamados por Máquinas</h3>
-                <p style="font-size: 2.5rem; font-weight: bold; color: var(--greek-blue-regular);">${mockTickets.length}</p>
-                <p style="margin-top: 1rem;">
-                    Média de ${(mockTickets.length / mockMachines.length).toFixed(1)} chamados por máquina
-                </p>
-            </div>
-            
-            <div class="dashboard-card">
-                <h3>Status Geral</h3>
-                <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <span>Máquinas Ativas</span>
-                            <span>${Math.round((mockMachines.filter(m => m.status === 'active').length / mockMachines.length) * 100)}%</span>
-                        </div>
-                        <div class="progress-bar-container" style="height: 6px; background: rgba(119, 141, 169, 0.2); border-radius: 3px; overflow: hidden;">
-                            <div style="width: ${Math.round((mockMachines.filter(m => m.status === 'active').length / mockMachines.length) * 100)}%; height: 100%; background: var(--success-color);"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <span>Peças Funcionais</span>
-                            <span>${Math.round((mockParts.filter(p => p.status === 'active').length / mockParts.length) * 100)}%</span>
-                        </div>
-                        <div class="progress-bar-container" style="height: 6px; background: rgba(119, 141, 169, 0.2); border-radius: 3px; overflow: hidden;">
-                            <div style="width: ${Math.round((mockParts.filter(p => p.status === 'active').length / mockParts.length) * 100)}%; height: 100%; background: var(--info-color);"></div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
         
@@ -2323,805 +706,127 @@ function loadMachines() {
                     <th>Nome</th>
                     <th>Setor</th>
                     <th>Status</th>
-                    <th>Chamados Recentes</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody id="machines-table-body">
-    `;
-
-    mockMachines.forEach(machine => {
-        const recentTicketsCount = getWeeklyTicketsCount(machine.id);
-        const healthStatus = getMachineStatus(machine.id);
-
-        html += `
-            <tr>
-                <td>${machine.id}</td>
-                <td>${machine.name}</td>
-                <td>${machine.sector}</td>
-                <td><span class="status-badge ${getStatusClass(machine.status)}">${getStatusLabel(machine.status)}</span></td>
-                <td>
-                    ${recentTicketsCount} 
-                    <span class="status-badge ${getStatusClass(healthStatus)}" style="margin-left: 5px; font-size: 0.75rem; padding: 0.2rem 0.5rem;">
-                        ${getStatusLabel(healthStatus)}
-                    </span>
-                </td>
-                <td>
-                    <button class="action-btn view-machine" data-id="${machine.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                        </svg>
-                        Ver
-                    </button>
-                    
-                    ${currentUser.role !== 'operator' ? `
-                        <button class="action-btn new-ticket-for-machine" data-id="${machine.id}">
-                            <svg viewBox="0 0 24 24" width="16" height="16">
-                                <path d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 18H5V9h14v12zM5 7V5h14v2H5zm2 4h10v2H7zm0 4h7v2H7z"/>
-                            </svg>
-                            Chamado
-                        </button>
-                    ` : ''}
-                    
-                    ${currentUser.role === 'manager' ? `
-                        <button class="action-btn edit-machine" data-id="${machine.id}">
-                            <svg viewBox="0 0 24 24" width="16" height="16">
-                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                            </svg>
-                            Editar
-                        </button>
-                        
-                        <button class="action-btn delete-machine" data-id="${machine.id}">
-                            <svg viewBox="0 0 24 24" width="16" height="16">
-                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                            </svg>
-                            Excluir
-                        </button>
-                    ` : ''}
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `
-            </tbody>
-        </table>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    if (currentUser.role === 'manager') {
-        document.getElementById('new-machine-btn').addEventListener('click', showNewMachineForm);
-    }
-
-    // Event listeners para botões de ação
-    document.querySelectorAll('.view-machine').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const machineId = parseInt(this.getAttribute('data-id'));
-            viewMachine(machineId);
-        });
-    });
-
-    document.querySelectorAll('.new-ticket-for-machine').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const machineId = parseInt(this.getAttribute('data-id'));
-            createTicketForMachine(machineId);
-        });
-    });
-
-    if (currentUser.role === 'manager') {
-        document.querySelectorAll('.edit-machine').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const machineId = parseInt(this.getAttribute('data-id'));
-                editMachine(machineId);
-            });
-        });
-
-        document.querySelectorAll('.delete-machine').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const machineId = parseInt(this.getAttribute('data-id'));
-                deleteMachine(machineId);
-            });
-        });
-    }
-
-    // Filter event listeners
-    document.getElementById('apply-machine-filters').addEventListener('click', applyMachineFilters);
-    document.getElementById('clear-machine-filters').addEventListener('click', clearMachineFilters);
-
-    // Export listeners
-    document.getElementById('export-machines-pdf').addEventListener('click', function () {
-        const machinesData = mockMachines.map(machine => {
-            const recentTicketsCount = getWeeklyTicketsCount(machine.id);
-            const healthStatus = getMachineStatus(machine.id);
-
-            return {
-                id: machine.id,
-                name: machine.name,
-                sector: machine.sector,
-                status: getStatusLabel(machine.status),
-                recentTickets: recentTicketsCount,
-                health: getStatusLabel(healthStatus)
-            };
-        });
-
-        exportToPDF(machinesData, 'Relatório de Máquinas', [
-            { key: 'id', header: 'ID' },
-            { key: 'name', header: 'Nome' },
-            { key: 'sector', header: 'Setor' },
-            { key: 'status', header: 'Status' },
-            { key: 'recentTickets', header: 'Chamados Recentes' },
-            { key: 'health', header: 'Saúde' }
-        ]);
-    });
-}
-
-function viewMachine(machineId) {
-    const machine = mockMachines.find(m => m.id === machineId);
-    if (!machine) {
-        showNotification('Erro', 'Máquina não encontrada!', 'error');
-        return;
-    }
-
-    const contentArea = document.getElementById('content-area');
-    const machineParts = mockParts.filter(part => part.machineId === machineId);
-    const machineTickets = mockTickets.filter(ticket => ticket.machineId === machineId);
-
-    let html = `
-        <div class="page-title">
-            <h2>Máquina: ${machine.name}</h2>
-            <button id="back-to-machines" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="dashboard-grid">
-            <div class="dashboard-card">
-                <h3>Detalhes da Máquina</h3>
-                <div class="machine-details">
-                    <div class="detail-row">
-                        <div class="detail-label">ID:</div>
-                        <div class="detail-value">${machine.id}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Nome:</div>
-                        <div class="detail-value">${machine.name}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Setor:</div>
-                        <div class="detail-value">${machine.sector}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Status:</div>
-                        <div class="detail-value">
-                            <span class="status-badge ${getStatusClass(machine.status)}">${getStatusLabel(machine.status)}</span>
-                        </div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Saúde:</div>
-                        <div class="detail-value">
-                            <span class="status-badge ${getStatusClass(getMachineStatus(machine.id))}">${getStatusLabel(getMachineStatus(machine.id))}</span>
-                        </div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Total de Peças:</div>
-                        <div class="detail-value">${machineParts.length}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Chamados Recentes:</div>
-                        <div class="detail-value">${getWeeklyTicketsCount(machine.id)}</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="dashboard-card">
-                <h3>Status das Peças</h3>
-                <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <span>Peças Funcionais</span>
-                            <span>${machineParts.filter(p => p.status === 'active').length} / ${machineParts.length}</span>
-                        </div>
-                        <div class="progress-bar-container" style="height: 8px; background: rgba(119, 141, 169, 0.2); border-radius: 4px; overflow: hidden;">
-                            <div style="width: ${Math.round((machineParts.filter(p => p.status === 'active').length / Math.max(1, machineParts.length)) * 100)}%; height: 100%; background: var(--success-color);"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <span>Peças em Manutenção</span>
-                            <span>${machineParts.filter(p => p.status === 'maintenance').length} / ${machineParts.length}</span>
-                        </div>
-                        <div class="progress-bar-container" style="height: 8px; background: rgba(119, 141, 169, 0.2); border-radius: 4px; overflow: hidden;">
-                            <div style="width: ${Math.round((machineParts.filter(p => p.status === 'maintenance').length / Math.max(1, machineParts.length)) * 100)}%; height: 100%; background: var(--info-color);"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 1rem;">
-                    <button id="view-parts-btn" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M4 14h4v-4H4v4zm0 5h4v-4H4v4zM4 9h4V5H4v4z"/>
-                        </svg>
-                        Ver Todas as Peças
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <div class="action-buttons" style="margin-top: 1.5rem;">
-            ${currentUser.role !== 'operator' ? `
-                <button id="create-ticket-btn" class="btn-primary">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                    </svg>
-                    Criar Chamado
-                </button>
-            ` : ''}
-            
-            ${currentUser.role === 'manager' ? `
-                <button id="edit-machine-btn" class="btn-secondary">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                    </svg>
-                    Editar Máquina
-                </button>
-                
-                <button id="add-part-btn" class="btn-info">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                    </svg>
-                    Adicionar Peça
-                </button>
-            ` : ''}
-        </div>
-        
-        <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Chamados Recentes</h3>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Peça</th>
-                    <th>Descrição</th>
-                    <th>Data de Abertura</th>
-                    <th>Status</th>
                     <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
-                ${machineTickets.length > 0 ?
-            machineTickets.map(ticket => {
-                const part = mockParts.find(p => p.id === ticket.partId);
-
-                return `
-                            <tr>
-                                <td>${ticket.id}</td>
-                                <td>${part ? part.name : 'N/A'}</td>
-                                <td>${ticket.description}</td>
-                                <td>${getFormattedDate(ticket.createdAt)}</td>
-                                <td><span class="status-badge ${getStatusClass(ticket.status)}">${getStatusLabel(ticket.status)}</span></td>
-                                <td>
-                                    <button class="action-btn view-ticket" data-id="${ticket.id}">
-                                        <svg viewBox="0 0 24 24" width="16" height="16">
-                                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                                        </svg>
-                                        Ver
-                                    </button>
-                                </td>
-                            </tr>
-                        `;
-            }).join('') :
-            '<tr><td colspan="6" class="help-noresult">Nenhum chamado encontrado para esta máquina</td></tr>'
-        }
+                ${mockMachines.map(machine => `
+                    <tr>
+                        <td>${machine.id}</td>
+                        <td>${machine.name}</td>
+                        <td>${machine.sector}</td>
+                        <td>${getStatusLabel(machine.status)}</td>
+                        <td class="actions-cell">
+                            <button class="action-btn view-machine" data-id="${machine.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                                </svg>
+                                Ver
+                            </button>
+                            <button class="action-btn edit-machine" data-id="${machine.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                </svg>
+                                Editar
+                            </button>
+                            <button class="action-btn delete-machine" data-id="${machine.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                </svg>
+                                Excluir
+                            </button>
+                            <button class="action-btn new-ticket-for-machine" data-id="${machine.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+                                </svg>
+                                Chamado
+                            </button>
+                        </td>
+                    </tr>
+                `).join('')}
             </tbody>
         </table>
     `;
 
-    // Add custom styles for machine details
-    html += `
-        <style>
-            .machine-details {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-                margin-top: 1rem;
-            }
-            .detail-row {
-                display: flex;
-                border-bottom: 1px solid var(--border-color);
-                padding-bottom: 0.5rem;
-            }
-            .detail-label {
-                font-weight: 600;
-                min-width: 150px;
-                color: var(--greek-blue-regular);
-            }
-            .detail-value {
-                flex: 1;
-            }
-            .maintenance-progress {
-                padding: 1rem 0;
-            }
-            .progress-bar-container {
-                width: 100%;
-                height: 8px;
-                background-color: rgba(119, 141, 169, 0.2);
-                border-radius: 4px;
-                overflow: hidden;
-                margin-bottom: 0.5rem;
-            }
-            .progress-bar {
-                height: 100%;
-                background-color: var(--success-color);
-                border-radius: 4px;
-                transition: width 1s ease;
-            }
-        </style>
-    `;
+    // Event listeners for machine management
+    setupMachineEventListeners();
+}
 
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-machines').addEventListener('click', loadMachines);
-
-    document.getElementById('view-parts-btn').addEventListener('click', function () {
-        loadParts(machineId);
-    });
-
-    if (currentUser.role !== 'operator') {
-        document.getElementById('create-ticket-btn').addEventListener('click', function () {
-            createTicketForMachine(machineId);
+// Separate function to setup machine event listeners
+function setupMachineEventListeners() {
+    const newMachineBtn = document.getElementById('new-machine-btn');
+    if (newMachineBtn) {
+        newMachineBtn.addEventListener('click', () => {
+            showNewMachineForm();
         });
     }
 
-    if (currentUser.role === 'manager') {
-        document.getElementById('edit-machine-btn').addEventListener('click', function () {
+    document.querySelectorAll('.view-machine').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const machineId = parseInt(e.currentTarget.getAttribute('data-id'));
+            viewMachineDetails(machineId);
+        });
+    });
+
+    document.querySelectorAll('.edit-machine').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const machineId = parseInt(e.currentTarget.getAttribute('data-id'));
             editMachine(machineId);
         });
-
-        document.getElementById('add-part-btn').addEventListener('click', function () {
-            showNewPartForm(machineId);
-        });
-    }
-
-    document.querySelectorAll('.view-ticket').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            viewTicket(ticketId);
-        });
-    });
-}
-
-function applyMachineFilters() {
-    const machineId = document.getElementById('filter-machine-id').value;
-    const machineName = document.getElementById('filter-machine-name').value.toLowerCase();
-    const sectorFilter = document.getElementById('filter-machine-sector').value;
-    const statusFilter = document.getElementById('filter-machine-status').value;
-
-    let filteredMachines = mockMachines;
-
-    // Apply filters
-    if (machineId) {
-        filteredMachines = filteredMachines.filter(m => m.id === parseInt(machineId));
-    }
-
-    if (machineName) {
-        filteredMachines = filteredMachines.filter(m =>
-            m.name.toLowerCase().includes(machineName)
-        );
-    }
-
-    if (sectorFilter) {
-        filteredMachines = filteredMachines.filter(m => m.sector === sectorFilter);
-    }
-
-    if (statusFilter) {
-        filteredMachines = filteredMachines.filter(m => m.status === statusFilter);
-    }
-
-    // Update table
-    updateMachinesTable(filteredMachines);
-
-    // Show notification
-    showNotification(
-        'Filtros aplicados',
-        `${filteredMachines.length} máquinas encontradas`,
-        'info'
-    );
-}
-
-function clearMachineFilters() {
-    document.getElementById('filter-machine-id').value = '';
-    document.getElementById('filter-machine-name').value = '';
-    document.getElementById('filter-machine-sector').value = '';
-    document.getElementById('filter-machine-status').value = '';
-
-    // Reset table to show all machines
-    updateMachinesTable(mockMachines);
-
-    // Show notification
-    showNotification('Filtros limpos', 'Todos os filtros foram removidos', 'info');
-}
-
-function updateMachinesTable(machines) {
-    const tableBody = document.getElementById('machines-table-body');
-    if (!tableBody) return;
-
-    // Clear existing rows
-    tableBody.innerHTML = '';
-
-    if (machines.length === 0) {
-        // No results
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="6" class="help-noresult">Nenhuma máquina encontrada com os filtros aplicados</td>
-            </tr>
-        `;
-        return;
-    }
-
-    // Add rows for each machine
-    machines.forEach(machine => {
-        const recentTicketsCount = getWeeklyTicketsCount(machine.id);
-        const healthStatus = getMachineStatus(machine.id);
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${machine.id}</td>
-            <td>${machine.name}</td>
-            <td>${machine.sector}</td>
-            <td><span class="status-badge ${getStatusClass(machine.status)}">${getStatusLabel(machine.status)}</span></td>
-            <td>
-                ${recentTicketsCount} 
-                <span class="status-badge ${getStatusClass(healthStatus)}" style="margin-left: 5px; font-size: 0.75rem; padding: 0.2rem 0.5rem;">
-                    ${getStatusLabel(healthStatus)}
-                </span>
-            </td>
-            <td>
-                <button class="action-btn view-machine" data-id="${machine.id}">
-                    <svg viewBox="0 0 24 24" width="16" height="16">
-                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                    </svg>
-                    Ver
-                </button>
-                
-                ${currentUser.role !== 'operator' ? `
-                    <button class="action-btn new-ticket-for-machine" data-id="${machine.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 18H5V9h14v12zM5 7V5h14v2H5zm2 4h10v2H7zm0 4h7v2H7z"/>
-                        </svg>
-                        Chamado
-                    </button>
-                ` : ''}
-                
-                ${currentUser.role === 'manager' ? `
-                    <button class="action-btn edit-machine" data-id="${machine.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                        </svg>
-                        Editar
-                    </button>
-                    
-                    <button class="action-btn delete-machine" data-id="${machine.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                        Excluir
-                    </button>
-                ` : ''}
-            </td>
-        `;
-
-        tableBody.appendChild(row);
     });
 
-    // Re-attach event listeners
-    document.querySelectorAll('.view-machine').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const machineId = parseInt(this.getAttribute('data-id'));
-            viewMachine(machineId);
+    document.querySelectorAll('.delete-machine').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const machineId = parseInt(e.currentTarget.getAttribute('data-id'));
+            deleteMachine(machineId);
         });
     });
 
-    document.querySelectorAll('.new-ticket-for-machine').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const machineId = parseInt(this.getAttribute('data-id'));
+    document.querySelectorAll('.new-ticket-for-machine').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const machineId = parseInt(e.currentTarget.getAttribute('data-id'));
             createTicketForMachine(machineId);
         });
     });
 
-    if (currentUser.role === 'manager') {
-        document.querySelectorAll('.edit-machine').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const machineId = parseInt(this.getAttribute('data-id'));
-                editMachine(machineId);
-            });
-        });
+    // Filter event listeners
+    const applyFiltersBtn = document.getElementById('apply-filters');
+    const clearFiltersBtn = document.getElementById('clear-filters');
 
-        document.querySelectorAll('.delete-machine').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const machineId = parseInt(this.getAttribute('data-id'));
-                deleteMachine(machineId);
-            });
-        });
+    if (applyFiltersBtn) {
+        applyFiltersBtn.addEventListener('click', applyMachineFilters);
+    }
+
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', clearMachineFilters);
     }
 }
 
-function showNewMachineForm() {
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Nova Máquina</h2>
-            <button id="back-to-machines" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações da Máquina</h3>
-            <form id="new-machine-form">
-                <div class="form-group">
-                    <label for="machine-name">Nome da Máquina:</label>
-                    <input type="text" id="machine-name" required placeholder="Digite o nome da máquina">
-                </div>
-                
-                <div class="form-group">
-                    <label for="machine-sector">Setor:</label>
-                    <select id="machine-sector" required>
-                        <option value="">Selecione um setor</option>
-                        <option value="Produção">Produção</option>
-                        <option value="Logística">Logística</option>
-                        <option value="Moldagem">Moldagem</option>
-                        <option value="Embalagem">Embalagem</option>
-                        <option value="Montagem">Montagem</option>
-                        <option value="Testes">Testes</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="machine-status">Status Inicial:</label>
-                    <select id="machine-status" required>
-                        <option value="active">Ativa</option>
-                        <option value="maintenance">Em Manutenção</option>
-                    </select>
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Salvar Máquina
-                    </button>
-                    <button type="button" id="cancel-machine" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-machines').addEventListener('click', loadMachines);
-    document.getElementById('cancel-machine').addEventListener('click', loadMachines);
-
-    // Form submission
-    document.getElementById('new-machine-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        const name = document.getElementById('machine-name').value.trim();
-        const sector = document.getElementById('machine-sector').value;
-        const status = document.getElementById('machine-status').value;
-
-        if (!name || !sector) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
-
-        // Create new machine
-        const newMachine = {
-            id: mockMachines.length + 1,
-            name,
-            sector,
-            status
-        };
-
-        // Add to mock data
-        mockMachines.push(newMachine);
-
-        // Show success notification
-        showNotification('Sucesso', 'Máquina criada com sucesso!', 'success');
-
-        // Return to machines list
-        loadMachines();
-    });
-}
-
-function editMachine(machineId) {
+// Helper function to view machine details
+function viewMachineDetails(machineId) {
     const machine = mockMachines.find(m => m.id === machineId);
     if (!machine) {
-        showNotification('Erro', 'Máquina não encontrada!', 'error');
+        showNotification('Erro', 'Máquina não encontrada', 'error');
         return;
     }
 
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Editar Máquina</h2>
-            <button id="back-to-machines" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações da Máquina</h3>
-            <form id="edit-machine-form">
-                <div class="form-group">
-                    <label for="machine-name">Nome da Máquina:</label>
-                    <input type="text" id="machine-name" required placeholder="Digite o nome da máquina" value="${machine.name}">
-                </div>
-                
-                <div class="form-group">
-                    <label for="machine-sector">Setor:</label>
-                    <select id="machine-sector" required>
-                        <option value="">Selecione um setor</option>
-                        <option value="Produção" ${machine.sector === 'Produção' ? 'selected' : ''}>Produção</option>
-                        <option value="Logística" ${machine.sector === 'Logística' ? 'selected' : ''}>Logística</option>
-                        <option value="Moldagem" ${machine.sector === 'Moldagem' ? 'selected' : ''}>Moldagem</option>
-                        <option value="Embalagem" ${machine.sector === 'Embalagem' ? 'selected' : ''}>Embalagem</option>
-                        <option value="Montagem" ${machine.sector === 'Montagem' ? 'selected' : ''}>Montagem</option>
-                        <option value="Testes" ${machine.sector === 'Testes' ? 'selected' : ''}>Testes</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="machine-status">Status:</label>
-                    <select id="machine-status" required>
-                        <option value="active" ${machine.status === 'active' ? 'selected' : ''}>Ativa</option>
-                        <option value="maintenance" ${machine.status === 'maintenance' ? 'selected' : ''}>Em Manutenção</option>
-                    </select>
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Salvar Alterações
-                    </button>
-                    <button type="button" id="cancel-edit" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-machines').addEventListener('click', () => viewMachine(machineId));
-    document.getElementById('cancel-edit').addEventListener('click', () => viewMachine(machineId));
-
-    // Form submission
-    document.getElementById('edit-machine-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        const name = document.getElementById('machine-name').value.trim();
-        const sector = document.getElementById('machine-sector').value;
-        const status = document.getElementById('machine-status').value;
-
-        if (!name || !sector) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
-
-        // Update machine data
-        machine.name = name;
-        machine.sector = sector;
-
-        // Check if status is changed
-        if (machine.status !== status) {
-            machine.status = status;
-
-            // If status changed to maintenance, create a system ticket
-            if (status === 'maintenance' && currentUser.role === 'manager') {
-                const newTicket = {
-                    id: mockTickets.length + 1,
-                    machineId: machine.id,
-                    partId: null,
-                    maintenanceTypeId: null,
-                    description: 'Máquina colocada em manutenção pelo sistema.',
-                    createdBy: currentUser.id,
-                    status: 'open',
-                    createdAt: new Date(),
-                    assignedTo: null,
-                    startedAt: null,
-                    estimatedTime: null,
-                    finishedAt: null
-                };
-
-                mockTickets.push(newTicket);
-
-                showNotification(
-                    'Ticket Criado',
-                    `Um novo chamado foi criado automaticamente para a máquina ${machine.name}`,
-                    'info'
-                );
-            }
-        }
-
-        // Show success notification
-        showNotification('Sucesso', 'Máquina atualizada com sucesso!', 'success');
-
-        // Return to machine view
-        viewMachine(machineId);
-    });
-}
-
-function deleteMachine(machineId) {
-    const machine = mockMachines.find(m => m.id === machineId);
-    if (!machine) {
-        showNotification('Erro', 'Máquina não encontrada!', 'error');
-        return;
-    }
-
-    // Check if machine has tickets
-    const machineTickets = mockTickets.filter(t => t.machineId === machineId);
-    if (machineTickets.length > 0) {
-        showNotification(
-            'Não é possível excluir',
-            'Esta máquina possui chamados associados e não pode ser excluída.',
-            'error'
-        );
-        return;
-    }
-
-    // Create confirmation modal
+    // Create a modal for machine details
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Confirmar Exclusão</h3>
-                <button class="modal-close" id="close-delete-modal">&times;</button>
+                <h3>Detalhes da Máquina</h3>
+                <button class="modal-close">&times;</button>
             </div>
-            <div>
-                <p>Tem certeza que deseja excluir a máquina <strong>${machine.name}</strong>?</p>
-                <p>Esta ação não pode ser desfeita.</p>
-                
-                <div class="action-buttons" style="margin-top: 1.5rem;">
-                    <button id="confirm-delete" class="btn-danger">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                        Sim, Excluir
-                    </button>
-                    <button id="cancel-delete" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
+            <div class="machine-details">
+                <p><strong>ID:</strong> ${machine.id}</p>
+                <p><strong>Nome:</strong> ${machine.name}</p>
+                <p><strong>Setor:</strong> ${machine.sector}</p>
+                <p><strong>Status:</strong> ${machine.status}</p>
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="editMachine(${machine.id}); this.closest('.modal-overlay').remove();">Editar</button>
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove();">Fechar</button>
                 </div>
             </div>
         </div>
@@ -3129,110 +834,405 @@ function deleteMachine(machineId) {
 
     document.body.appendChild(modal);
 
-    // Event listeners for modal buttons
-    document.getElementById('close-delete-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
+    // Close modal event
+    modal.querySelector('.modal-close').addEventListener('click', () => {
+        modal.remove();
     });
 
-    document.getElementById('cancel-delete').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-
-    document.getElementById('confirm-delete').addEventListener('click', () => {
-        // Remove machine from array
-        const index = mockMachines.findIndex(m => m.id === machineId);
-        if (index !== -1) {
-            const machineId = mockMachines[index].id;
-            mockMachines.splice(index, 1);
-
-            // Remove associated parts
-            const partsToRemove = mockParts.filter(p => p.machineId === machineId);
-            partsToRemove.forEach(part => {
-                const partIndex = mockParts.findIndex(p => p.id === part.id);
-                if (partIndex !== -1) {
-                    mockParts.splice(partIndex, 1);
-                }
-            });
-
-            // Show success notification
-            showNotification('Sucesso', 'Máquina excluída com sucesso!', 'success');
-
-            // Remove modal
-            document.body.removeChild(modal);
-
-            // Return to machines list
-            loadMachines();
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
         }
     });
+
+    showNotification('Detalhes', `Visualizando detalhes da máquina: ${machine.name}`, 'info');
 }
 
-function createTicketForMachine(machineId, preSelectedPartId = null) {
-    // ... existing code ...
+// Helper function to show new machine form
+function showNewMachineForm() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Nova Máquina</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="new-machine-form">
+                <div class="form-group">
+                    <label for="machine-name">Nome da Máquina:</label>
+                    <input type="text" id="machine-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="machine-sector">Setor:</label>
+                    <select id="machine-sector" required>
+                        <option value="">Selecione um setor</option>
+                        <option value="Produção">Produção</option>
+                        <option value="Logística">Logística</option>
+                        <option value="Moldagem">Moldagem</option>
+                        <option value="Automação">Automação</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="machine-status">Status:</label>
+                    <select id="machine-status" required>
+                        <option value="active">Ativa</option>
+                        <option value="maintenance">Em Manutenção</option>
+                        <option value="inactive">Inativa</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Criar Máquina</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Form submit event
+    modal.querySelector('#new-machine-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('machine-name').value;
+        const sector = document.getElementById('machine-sector').value;
+        const status = document.getElementById('machine-status').value;
+
+        // Create new machine (in a real app, this would call an API)
+        const newMachine = {
+            id: mockMachines.length + 1,
+            name,
+            sector,
+            status
+        };
+
+        mockMachines.push(newMachine);
+
+        modal.remove();
+        showNotification('Máquina Criada', `A máquina "${name}" foi criada com sucesso!`, 'success');
+        loadMachines(); // Reload the machines list
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
 }
 
-// ... existing code ...
+// Helper function to edit a machine
+function editMachine(machineId) {
+    const machine = mockMachines.find(m => m.id === machineId);
+    if (!machine) {
+        showNotification('Erro', 'Máquina não encontrada', 'error');
+        return;
+    }
 
-function loadParts(machineId = null) {
-    const contentArea = document.getElementById('content-area');
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar Máquina</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="edit-machine-form">
+                <div class="form-group">
+                    <label for="edit-machine-name">Nome da Máquina:</label>
+                    <input type="text" id="edit-machine-name" value="${machine.name}" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-machine-sector">Setor:</label>
+                    <select id="edit-machine-sector" required>
+                        <option value="Produção" ${machine.sector === 'Produção' ? 'selected' : ''}>Produção</option>
+                        <option value="Logística" ${machine.sector === 'Logística' ? 'selected' : ''}>Logística</option>
+                        <option value="Moldagem" ${machine.sector === 'Moldagem' ? 'selected' : ''}>Moldagem</option>
+                        <option value="Automação" ${machine.sector === 'Automação' ? 'selected' : ''}>Automação</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-machine-status">Status:</label>
+                    <select id="edit-machine-status" required>
+                        <option value="active" ${machine.status === 'active' ? 'selected' : ''}>Ativa</option>
+                        <option value="maintenance" ${machine.status === 'maintenance' ? 'selected' : ''}>Em Manutenção</option>
+                        <option value="inactive" ${machine.status === 'inactive' ? 'selected' : ''}>Inativa</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Salvar Alterações</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
 
-    let filteredParts = machineId ?
-        mockParts.filter(part => part.machineId === machineId) :
-        mockParts;
+    document.body.appendChild(modal);
 
-    let html = `
-        <div class="page-title">
-            <h2>Peças ${machineId ? `da ${mockMachines.find(m => m.id === machineId)?.name || 'Máquina'}` : ''}</h2>
-            <div class="export-options">
-                <button class="export-btn" id="export-parts-pdf">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                    Exportar para PDF
-                </button>
+    // Form submit event
+    modal.querySelector('#edit-machine-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('edit-machine-name').value;
+        const sector = document.getElementById('edit-machine-sector').value;
+        const status = document.getElementById('edit-machine-status').value;
+
+        // Update machine
+        machine.name = name;
+        machine.sector = sector;
+        machine.status = status;
+
+        modal.remove();
+        showNotification('Máquina Atualizada', `A máquina "${name}" foi atualizada com sucesso!`, 'success');
+        loadMachines(); // Reload the machines list
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function to delete a machine
+function deleteMachine(machineId) {
+    const machine = mockMachines.find(m => m.id === machineId);
+    if (!machine) {
+        showNotification('Erro', 'Máquina não encontrada', 'error');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirmar Exclusão</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div>
+                <p>Tem certeza que deseja excluir a máquina <strong>"${machine.name}"</strong>?</p>
+                <p style="color: var(--danger-color); font-size: 0.9rem;">Esta ação não pode ser desfeita.</p>
+                <div class="action-buttons" style="margin-top: 1.5rem;">
+                    <button class="btn-danger confirm-delete">Sim, Excluir</button>
+                    <button class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
             </div>
         </div>
-        
-        ${currentUser.role === 'manager' && !machineId ? `
-        <div class="action-buttons">
+    `;
+
+    document.body.appendChild(modal);
+
+    // Confirm delete event
+    modal.querySelector('.confirm-delete').addEventListener('click', () => {
+        const index = mockMachines.findIndex(m => m.id === machineId);
+        if (index > -1) {
+            mockMachines.splice(index, 1);
+            modal.remove();
+            showNotification('Máquina Excluída', `A máquina "${machine.name}" foi excluída com sucesso!`, 'success');
+            loadMachines(); // Reload the machines list
+        }
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function to create a new ticket for a specific machine
+function createTicketForMachine(machineId) {
+    const machine = mockMachines.find(m => m.id === machineId);
+    if (!machine) {
+        showNotification('Erro', 'Máquina não encontrada', 'error');
+        return;
+    }
+
+    // Get parts for this machine
+    const machineParts = mockParts.filter(p => p.machineId === machineId);
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Novo Chamado - ${machine.name}</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="new-ticket-form">
+                <div class="form-group">
+                    <label for="ticket-part">Peça:</label>
+                    <select id="ticket-part" required>
+                        <option value="">Selecione uma peça</option>
+                        ${machineParts.map(part => `<option value="${part.id}">${part.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ticket-description">Descrição do Problema:</label>
+                    <textarea id="ticket-description" rows="4" required placeholder="Descreva o problema encontrado..."></textarea>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Criar Chamado</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Form submit event
+    modal.querySelector('#new-ticket-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const partId = parseInt(document.getElementById('ticket-part').value);
+        const description = document.getElementById('ticket-description').value;
+
+        // Create new ticket
+        const newTicket = {
+            id: mockTickets.length + 1,
+            machineId: machineId,
+            partId: partId,
+            maintenanceTypeId: null,
+            description: description,
+            createdBy: currentUser.id,
+            status: 'open',
+            createdAt: new Date(),
+            assignedTo: null,
+            startedAt: null,
+            estimatedTime: null,
+            finishedAt: null
+        };
+
+        mockTickets.push(newTicket);
+
+        modal.remove();
+        showNotification('Chamado Criado', `Chamado #${newTicket.id} criado com sucesso para a máquina "${machine.name}"!`, 'success');
+
+        // Create system notification for technicians
+        if (window.notificationSystem) {
+            window.notificationSystem.createNotification(
+                'ticket',
+                `Novo chamado #${newTicket.id} criado para ${machine.name}`,
+                null, // all technicians
+                newTicket.id
+            );
+        }
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Filter functions
+function applyMachineFilters() {
+    const statusFilter = document.getElementById('filter-status');
+    const sectorFilter = document.getElementById('filter-sector');
+
+    if (!statusFilter || !sectorFilter) {
+        showNotification('Erro', 'Elementos de filtro não encontrados', 'error');
+        return;
+    }
+
+    const statusValue = statusFilter.value;
+    const sectorValue = sectorFilter.value;
+
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+
+    tableRows.forEach(row => {
+        if (row.cells.length >= 4) {
+            const status = row.cells[3].textContent.toLowerCase();
+            const sector = row.cells[2].textContent;
+
+            let showRow = true;
+
+            if (statusValue && !status.includes(statusValue)) {
+                showRow = false;
+            }
+
+            if (sectorValue && sector !== sectorValue) {
+                showRow = false;
+            }
+
+            row.style.display = showRow ? '' : 'none';
+        }
+    });
+
+    showNotification('Filtros Aplicados',
+        `Filtros aplicados: ${statusValue || 'Todos os status'}, ${sectorValue || 'Todos os setores'}`,
+        'info'
+    );
+}
+
+function clearMachineFilters() {
+    const statusFilter = document.getElementById('filter-status');
+    const sectorFilter = document.getElementById('filter-sector');
+
+    if (statusFilter) statusFilter.value = '';
+    if (sectorFilter) sectorFilter.value = '';
+
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.style.display = '';
+    });
+
+    showNotification('Filtros Limpos', 'Todos os filtros foram removidos', 'info');
+}
+
+// Load parts function
+function loadParts() {
+    const contentArea = document.getElementById('content-area');
+
+    // Prepare status labels for better display
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 'active': return '<span class="status-badge status-ok">Ativa</span>';
+            case 'maintenance': return '<span class="status-badge status-maintenance">Em Manutenção</span>';
+            case 'inactive': return '<span class="status-badge status-critical">Inativa</span>';
+            default: return '<span class="status-badge">Desconhecido</span>';
+        }
+    };
+
+    // Get machine name by ID
+    const getMachineName = (id) => {
+        const machine = mockMachines.find(m => m.id === id);
+        return machine ? machine.name : 'Desconhecido';
+    };
+
+    contentArea.innerHTML = `
+        <div class="page-title">
+            <h2>Gerenciamento de Peças</h2>
             <button id="new-part-btn" class="btn-primary">
                 <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                 </svg>
                 Nova Peça
             </button>
         </div>
-        ` : ''}
         
         <div class="filter-container">
-            <h3>Filtros de Busca</h3>
+            <h3>Filtros</h3>
             <div class="filter-grid">
                 <div class="filter-group">
-                    <label for="filter-part-id">ID da Peça:</label>
-                    <input type="number" id="filter-part-id" placeholder="Buscar por ID">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-part-name">Nome da Peça:</label>
-                    <input type="text" id="filter-part-name" placeholder="Digite o nome da peça">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-part-machine">Máquina:</label>
-                    <select id="filter-part-machine" ${machineId ? 'disabled' : ''}>
-                        <option value="">Todas as máquinas</option>
-                        ${mockMachines.map(machine => `
-                            <option value="${machine.id}" ${machine.id === machineId ? 'selected' : ''}>${machine.name}</option>
-                        `).join('')}
+                    <label for="filter-status">Status</label>
+                    <select id="filter-status">
+                        <option value="">Todos</option>
+                        <option value="active">Ativa</option>
+                        <option value="maintenance">Em Manutenção</option>
+                        <option value="inactive">Inativa</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="filter-part-status">Status:</label>
-                    <select id="filter-part-status">
-                        <option value="">Todos os status</option>
-                        <option value="active">Ativa</option>
-                        <option value="maintenance">Em Manutenção</option>
+                    <label for="filter-machine">Máquina</label>
+                    <select id="filter-machine">
+                        <option value="">Todas</option>
+                        ${mockMachines.map(machine => `<option value="${machine.id}">${machine.name}</option>`).join('')}
                     </select>
                 </div>
             </div>
@@ -3249,797 +1249,291 @@ function loadParts(machineId = null) {
                     <th>Nome</th>
                     <th>Máquina</th>
                     <th>Status</th>
-                    <th>Chamados</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody id="parts-table-body">
-    `;
-
-    if (filteredParts.length === 0) {
-        html += `
-            <tr>
-                <td colspan="6" class="help-noresult">Nenhuma peça encontrada</td>
-            </tr>
-        `;
-    } else {
-        filteredParts.forEach(part => {
-            const machine = mockMachines.find(m => m.id === part.machineId);
-            const partTickets = mockTickets.filter(t => t.partId === part.id);
-
-            html += `
-                <tr>
-                    <td>${part.id}</td>
-                    <td>${part.name}</td>
-                    <td>${machine ? machine.name : 'N/A'}</td>
-                    <td><span class="status-badge ${getStatusClass(part.status)}">${getStatusLabel(part.status)}</span></td>
-                    <td>${partTickets.length}</td>
-                    <td>
-                        <button class="action-btn view-part" data-id="${part.id}">
-                            <svg viewBox="0 0 24 24" width="16" height="16">
-                                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                            </svg>
-                            Ver
-                        </button>
-                        
-                        ${currentUser.role === 'manager' ? `
-                            <button class="action-btn edit-part" data-id="${part.id}">
-                                <svg viewBox="0 0 24 24" width="16" height="16">
-                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                                </svg>
-                                Editar
-                            </button>
-                            
-                            <button class="action-btn delete-part" data-id="${part.id}">
-                                <svg viewBox="0 0 24 24" width="16" height="16">
-                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                                </svg>
-                                Excluir
-                            </button>
-                        ` : ''}
-                    </td>
-                </tr>
-            `;
-        });
-    }
-
-    html += `
-            </tbody>
-        </table>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    if (currentUser.role === 'manager' && !machineId) {
-        document.getElementById('new-part-btn')?.addEventListener('click', () => showNewPartForm());
-    }
-
-    document.querySelectorAll('.view-part').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const partId = parseInt(this.getAttribute('data-id'));
-            viewPart(partId);
-        });
-    });
-
-    if (currentUser.role === 'manager') {
-        document.querySelectorAll('.edit-part').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const partId = parseInt(this.getAttribute('data-id'));
-                editPart(partId);
-            });
-        });
-
-        document.querySelectorAll('.delete-part').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const partId = parseInt(this.getAttribute('data-id'));
-                deletePart(partId);
-            });
-        });
-    }
-
-    // Filter event listeners
-    document.getElementById('apply-part-filters')?.addEventListener('click', applyPartFilters);
-    document.getElementById('clear-part-filters')?.addEventListener('click', clearPartFilters);
-
-    // Export listener
-    document.getElementById('export-parts-pdf')?.addEventListener('click', function () {
-        exportPartsToPDF(filteredParts);
-    });
-
-    // If viewing from machine details, add back button
-    if (machineId) {
-        const backButton = document.createElement('button');
-        backButton.id = 'back-to-machine';
-        backButton.className = 'btn-secondary';
-        backButton.innerHTML = `
-            <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-            </svg>
-            Voltar para Máquina
-        `;
-        backButton.addEventListener('click', () => viewMachine(machineId));
-
-        document.querySelector('.page-title').appendChild(backButton);
-    }
-}
-
-function viewPart(partId) {
-    const part = mockParts.find(p => p.id === partId);
-    if (!part) {
-        showNotification('Erro', 'Peça não encontrada!', 'error');
-        return;
-    }
-
-    const machine = mockMachines.find(m => m.id === part.machineId);
-    const partTickets = mockTickets.filter(t => t.partId === part.id);
-    const maintenanceTypes = mockMaintenanceTimes.filter(mt => mt.partId === part.id);
-
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Peça: ${part.name}</h2>
-            <button id="back-to-parts" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="dashboard-grid">
-            <div class="dashboard-card">
-                <h3>Detalhes da Peça</h3>
-                <div class="part-details">
-                    <div class="detail-row">
-                        <div class="detail-label">ID:</div>
-                        <div class="detail-value">${part.id}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Nome:</div>
-                        <div class="detail-value">${part.name}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Máquina:</div>
-                        <div class="detail-value">${machine ? machine.name : 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Status:</div>
-                        <div class="detail-value">
-                            <span class="status-badge ${getStatusClass(part.status)}">${getStatusLabel(part.status)}</span>
-                        </div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Total de Chamados:</div>
-                        <div class="detail-value">${partTickets.length}</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="dashboard-card">
-                <h3>Tempos de Manutenção</h3>
-                <div class="maintenance-times">
-                    ${maintenanceTypes.length > 0 ?
-            maintenanceTypes.map(mt => `
-                            <div class="maintenance-time-item">
-                                <div class="maintenance-type">${mt.maintenanceType}</div>
-                                <div class="maintenance-duration">${mt.estimatedTime} min</div>
-                            </div>
-                        `).join('') :
-            '<div class="help-noresult">Nenhum tipo de manutenção cadastrado</div>'
-        }
-                </div>
-                
-                ${currentUser.role === 'manager' ? `
-                <div style="margin-top: 1rem;">
-                    <button id="add-maintenance-type-btn" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                        </svg>
-                        Adicionar Tipo de Manutenção
-                    </button>
-                </div>
-                ` : ''}
-            </div>
-        </div>
-        
-        <div class="action-buttons" style="margin-top: 1.5rem;">
-            ${currentUser.role !== 'operator' ? `
-                <button id="create-ticket-for-part-btn" class="btn-primary">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 18H5V9h14v12zM5 7V5h14v2H5zm2 4h10v2H7zm0 4h7v2H7z"/>
-                    </svg>
-                    Criar Chamado
-                </button>
-            ` : ''}
-            
-            ${currentUser.role === 'manager' ? `
-                <button id="edit-part-btn" class="btn-secondary">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                    </svg>
-                    Editar Peça
-                </button>
-            ` : ''}
-        </div>
-        
-        <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Chamados Relacionados</h3>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Descrição</th>
-                    <th>Data de Abertura</th>
-                    <th>Status</th>
                     <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
-                ${partTickets.length > 0 ?
-            partTickets.map(ticket => `
-                        <tr>
-                            <td>${ticket.id}</td>
-                            <td>${ticket.description}</td>
-                            <td>${getFormattedDate(ticket.createdAt)}</td>
-                            <td><span class="status-badge ${getStatusClass(ticket.status)}">${getStatusLabel(ticket.status)}</span></td>
-                            <td>
-                                <button class="action-btn view-ticket" data-id="${ticket.id}">
-                                    <svg viewBox="0 0 24 24" width="16" height="16">
-                                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                                    </svg>
-                                    Ver
-                                </button>
-                            </td>
-                        </tr>
-                    `).join('') :
-            '<tr><td colspan="5" class="help-noresult">Nenhum chamado encontrado para esta peça</td></tr>'
-        }
+                ${mockParts.map(part => `
+                    <tr>
+                        <td>${part.id}</td>
+                        <td>${part.name}</td>
+                        <td>${getMachineName(part.machineId)}</td>
+                        <td>${getStatusLabel(part.status)}</td>
+                        <td class="actions-cell">
+                            <button class="action-btn view-part" data-id="${part.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                                </svg>
+                                Ver
+                            </button>
+                            <button class="action-btn edit-part" data-id="${part.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                </svg>
+                                Editar
+                            </button>
+                            <button class="action-btn delete-part" data-id="${part.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                </svg>
+                                Excluir
+                            </button>
+                        </td>
+                    </tr>
+                `).join('')}
             </tbody>
         </table>
     `;
 
-    // Add custom styles for part details
-    html += `
-        <style>
-            .part-details {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-                margin-top: 1rem;
-            }
-            .detail-row {
-                display: flex;
-                border-bottom: 1px solid var(--border-color);
-                padding-bottom: 0.5rem;
-            }
-            .detail-label {
-                font-weight: 600;
-                min-width: 150px;
-                color: var(--greek-blue-regular);
-            }
-            .detail-value {
-                flex: 1;
-            }
-            .maintenance-times {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-                margin-top: 1rem;
-            }
-            .maintenance-time-item {
-                display: flex;
-                justify-content: space-between;
-                padding: 0.5rem 0.75rem;
-                background-color: rgba(119, 141, 169, 0.1);
-                border-radius: 8px;
-            }
-            .maintenance-type {
-                font-weight: 500;
-            }
-            .maintenance-duration {
-                font-weight: 600;
-                color: var(--greek-blue-regular);
-            }
-        </style>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-parts').addEventListener('click', () => loadParts(machine?.id));
-
-    if (currentUser.role !== 'operator') {
-        document.getElementById('create-ticket-for-part-btn').addEventListener('click', () => {
-            createTicketForMachine(part.machineId, part.id);
-        });
-    }
-
-    if (currentUser.role === 'manager') {
-        document.getElementById('edit-part-btn').addEventListener('click', () => {
-            editPart(part.id);
-        });
-
-        document.getElementById('add-maintenance-type-btn')?.addEventListener('click', () => {
-            addMaintenanceType(part.id);
-        });
-    }
-
-    document.querySelectorAll('.view-ticket').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const ticketId = parseInt(this.getAttribute('data-id'));
-            viewTicket(ticketId);
-        });
-    });
+    // Add event listeners for the parts management
+    setupPartsEventListeners();
 }
 
-function applyPartFilters() {
-    const partId = document.getElementById('filter-part-id').value;
-    const partName = document.getElementById('filter-part-name').value.toLowerCase();
-    const machineFilter = document.getElementById('filter-part-machine').value;
-    const statusFilter = document.getElementById('filter-part-status').value;
-
-    let filteredParts = mockParts;
-
-    // Apply filters
-    if (partId) {
-        filteredParts = filteredParts.filter(p => p.id === parseInt(partId));
+// Setup event listeners for parts
+function setupPartsEventListeners() {
+    const newPartBtn = document.getElementById('new-part-btn');
+    if (newPartBtn) {
+        newPartBtn.addEventListener('click', () => {
+            showNewPartForm();
+        });
     }
 
-    if (partName) {
-        filteredParts = filteredParts.filter(p =>
-            p.name.toLowerCase().includes(partName)
-        );
-    }
-
-    if (machineFilter) {
-        filteredParts = filteredParts.filter(p => p.machineId === parseInt(machineFilter));
-    }
-
-    if (statusFilter) {
-        filteredParts = filteredParts.filter(p => p.status === statusFilter);
-    }
-
-    // Update table
-    updatePartsTable(filteredParts);
-
-    // Show notification
-    showNotification(
-        'Filtros aplicados',
-        `${filteredParts.length} peças encontradas`,
-        'info'
-    );
-}
-
-function clearPartFilters() {
-    document.getElementById('filter-part-id').value = '';
-    document.getElementById('filter-part-name').value = '';
-    document.getElementById('filter-part-machine').value = '';
-    document.getElementById('filter-part-status').value = '';
-
-    // Reset table to show all parts
-    updatePartsTable(mockParts);
-
-    // Show notification
-    showNotification('Filtros limpos', 'Todos os filtros foram removidos', 'info');
-}
-
-function updatePartsTable(parts) {
-    const tableBody = document.getElementById('parts-table-body');
-    if (!tableBody) return;
-
-    // Clear existing rows
-    tableBody.innerHTML = '';
-
-    if (parts.length === 0) {
-        // No results
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="6" class="help-noresult">Nenhuma peça encontrada com os filtros aplicados</td>
-            </tr>
-        `;
-        return;
-    }
-
-    // Add rows for each part
-    parts.forEach(part => {
-        const machine = mockMachines.find(m => m.id === part.machineId);
-        const partTickets = mockTickets.filter(t => t.partId === part.id);
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${part.id}</td>
-            <td>${part.name}</td>
-            <td>${machine ? machine.name : 'N/A'}</td>
-            <td><span class="status-badge ${getStatusClass(part.status)}">${getStatusLabel(part.status)}</span></td>
-            <td>${partTickets.length}</td>
-            <td>
-                <button class="action-btn view-part" data-id="${part.id}">
-                    <svg viewBox="0 0 24 24" width="16" height="16">
-                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                    </svg>
-                    Ver
-                </button>
-                
-                ${currentUser.role === 'manager' ? `
-                    <button class="action-btn edit-part" data-id="${part.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                        </svg>
-                        Editar
-                    </button>
-                    
-                    <button class="action-btn delete-part" data-id="${part.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                        Excluir
-                    </button>
-                ` : ''}
-            </td>
-        `;
-
-        tableBody.appendChild(row);
-    });
-
-    // Re-attach event listeners
-    document.querySelectorAll('.view-part').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const partId = parseInt(this.getAttribute('data-id'));
-            viewPart(partId);
+    document.querySelectorAll('.view-part').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const partId = parseInt(e.currentTarget.getAttribute('data-id'));
+            viewPartDetails(partId);
         });
     });
 
-    if (currentUser.role === 'manager') {
-        document.querySelectorAll('.edit-part').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const partId = parseInt(this.getAttribute('data-id'));
-                editPart(partId);
-            });
+    document.querySelectorAll('.edit-part').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const partId = parseInt(e.currentTarget.getAttribute('data-id'));
+            editPart(partId);
         });
+    });
 
-        document.querySelectorAll('.delete-part').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const partId = parseInt(this.getAttribute('data-id'));
-                deletePart(partId);
-            });
+    document.querySelectorAll('.delete-part').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const partId = parseInt(e.currentTarget.getAttribute('data-id'));
+            deletePart(partId);
         });
+    });
+
+    // Filter event listeners
+    const applyFiltersBtn = document.getElementById('apply-part-filters');
+    const clearFiltersBtn = document.getElementById('clear-part-filters');
+
+    if (applyFiltersBtn) {
+        applyFiltersBtn.addEventListener('click', applyPartFilters);
+    }
+
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', clearPartFilters);
     }
 }
 
-function exportPartsToPDF(parts) {
-    // Show progress notification
-    const notification = showNotification('Exportando...', 'Gerando relatório de peças em PDF, aguarde.', 'info');
-
-    setTimeout(() => {
-        try {
-            const doc = new jspdf.jsPDF();
-
-            // Configure title and date
-            doc.setFontSize(18);
-            doc.text('Relatório de Peças', 14, 20);
-
-            doc.setFontSize(11);
-            doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-            doc.text(`Usuário: ${currentUser.name}`, 14, 37);
-
-            // Prepare data for table
-            const partsData = parts.map(part => {
-                const machine = mockMachines.find(m => m.id === part.machineId);
-                const partTickets = mockTickets.filter(t => t.partId === part.id);
-
-                return {
-                    id: part.id,
-                    name: part.name,
-                    machine: machine ? machine.name : 'N/A',
-                    status: getStatusLabel(part.status),
-                    ticketsCount: partTickets.length
-                };
-            });
-
-            // Configure table columns
-            const columns = [
-                { key: 'id', header: 'ID' },
-                { key: 'name', header: 'Nome da Peça' },
-                { key: 'machine', header: 'Máquina' },
-                { key: 'status', header: 'Status' },
-                { key: 'ticketsCount', header: 'Chamados' }
-            ];
-
-            // Generate table
-            doc.autoTable({
-                startY: 45,
-                head: [columns.map(col => col.header)],
-                body: partsData.map(item => columns.map(col => item[col.key])),
-                theme: 'striped',
-                headStyles: {
-                    fillColor: [27, 38, 59], // Greek blue
-                    textColor: 255
-                },
-                styles: {
-                    fontSize: 9,
-                    cellPadding: 3
-                }
-            });
-
-            // Footer
-            const pageCount = doc.internal.getNumberOfPages();
-            for (let i = 1; i <= pageCount; i++) {
-                doc.setPage(i);
-
-                // Add footer
-                doc.setFontSize(8);
-                doc.text(`Sistema de Chamados - Página ${i} de ${pageCount}`,
-                    doc.internal.pageSize.width / 2,
-                    doc.internal.pageSize.height - 10,
-                    { align: 'center' });
-            }
-
-            // Save the file
-            doc.save(`relatorio_pecas_${new Date().toISOString().split('T')[0]}.pdf`);
-
-            // Update notification
-            notification.querySelector('.notification-title').textContent = 'PDF Gerado';
-            notification.querySelector('.notification-message').textContent = 'O relatório de peças foi gerado com sucesso!';
-            notification.classList.remove('info');
-            notification.classList.add('success');
-        } catch (error) {
-            // Show error notification
-            showNotification('Erro ao Exportar', 'Erro ao gerar PDF: ' + error.message, 'error');
-            console.error('Erro ao gerar PDF:', error);
-        }
-    }, 800);
-}
-
-function showNewPartForm(machineId = null) {
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Nova Peça${machineId ? ` para ${mockMachines.find(m => m.id === machineId)?.name || 'Máquina'}` : ''}</h2>
-            <button id="back-btn" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações da Peça</h3>
-            <form id="new-part-form">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="part-name">Nome da Peça:</label>
-                        <input type="text" id="part-name" required placeholder="Digite o nome da peça">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="part-machine">Máquina:</label>
-                        <select id="part-machine" required ${machineId ? 'disabled' : ''}>
-                            <option value="">Selecione uma máquina</option>
-                            ${mockMachines.map(machine => `
-                                <option value="${machine.id}" ${machine.id === machineId ? 'selected' : ''}>${machine.name}</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="part-status">Status Inicial:</label>
-                        <select id="part-status" required>
-                            <option value="active">Ativa</option>
-                            <option value="maintenance">Em Manutenção</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Salvar Peça
-                    </button>
-                    <button type="button" id="cancel-part" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-btn').addEventListener('click', () =>
-        machineId ? viewMachine(machineId) : loadParts()
-    );
-
-    document.getElementById('cancel-part').addEventListener('click', () =>
-        machineId ? viewMachine(machineId) : loadParts()
-    );
-
-    // Form submission
-    document.getElementById('new-part-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        const name = document.getElementById('part-name').value.trim();
-        const machineIdToUse = machineId || parseInt(document.getElementById('part-machine').value);
-        const status = document.getElementById('part-status').value;
-
-        if (!name || !machineIdToUse) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
-
-        // Create new part
-        const newPart = {
-            id: mockParts.length + 1,
-            machineId: machineIdToUse,
-            name,
-            status
-        };
-
-        // Add to mock data
-        mockParts.push(newPart);
-
-        // Show success notification
-        showNotification('Sucesso', 'Peça criada com sucesso!', 'success');
-
-        // Return to previous view
-        if (machineId) {
-            viewMachine(machineId);
-        } else {
-            loadParts();
-        }
-    });
-}
-
-function editPart(partId) {
+// Helper function to view part details
+function viewPartDetails(partId) {
     const part = mockParts.find(p => p.id === partId);
     if (!part) {
-        showNotification('Erro', 'Peça não encontrada!', 'error');
+        showNotification('Erro', 'Peça não encontrada', 'error');
         return;
     }
 
-    const contentArea = document.getElementById('content-area');
+    const machine = mockMachines.find(m => m.id === part.machineId);
 
-    let html = `
-        <div class="page-title">
-            <h2>Editar Peça</h2>
-            <button id="back-btn" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações da Peça</h3>
-            <form id="edit-part-form">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="part-name">Nome da Peça:</label>
-                        <input type="text" id="part-name" required placeholder="Digite o nome da peça" value="${part.name}">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="part-machine">Máquina:</label>
-                        <select id="part-machine" required>
-                            <option value="">Selecione uma máquina</option>
-                            ${mockMachines.map(machine => `
-                                <option value="${machine.id}" ${machine.id === part.machineId ? 'selected' : ''}>${machine.name}</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="part-status">Status:</label>
-                        <select id="part-status" required>
-                            <option value="active" ${part.status === 'active' ? 'selected' : ''}>Ativa</option>
-                            <option value="maintenance" ${part.status === 'maintenance' ? 'selected' : ''}>Em Manutenção</option>
-                        </select>
-                    </div>
-                </div>
-                
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Detalhes da Peça</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="part-details">
+                <p><strong>ID:</strong> ${part.id}</p>
+                <p><strong>Nome:</strong> ${part.name}</p>
+                <p><strong>Máquina:</strong> ${machine ? machine.name : 'Desconhecido'}</p>
+                <p><strong>Status:</strong> ${part.status}</p>
                 <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Salvar Alterações
-                    </button>
-                    <button type="button" id="cancel-edit" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
+                    <button class="btn-primary" onclick="editPart(${part.id}); this.closest('.modal-overlay').remove();">Editar</button>
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove();">Fechar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function to show new part form
+function showNewPartForm() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Nova Peça</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="new-part-form">
+                <div class="form-group">
+                    <label for="part-name">Nome da Peça:</label>
+                    <input type="text" id="part-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="part-machine">Máquina:</label>
+                    <select id="part-machine" required>
+                        <option value="">Selecione uma máquina</option>
+                        ${mockMachines.map(machine => `<option value="${machine.id}">${machine.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="part-status">Status:</label>
+                    <select id="part-status" required>
+                        <option value="active">Ativa</option>
+                        <option value="maintenance">Em Manutenção</option>
+                        <option value="inactive">Inativa</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Criar Peça</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
                 </div>
             </form>
         </div>
     `;
 
-    contentArea.innerHTML = html;
+    document.body.appendChild(modal);
 
-    // Event listeners
-    document.getElementById('back-btn').addEventListener('click', () => viewPart(partId));
-    document.getElementById('cancel-edit').addEventListener('click', () => viewPart(partId));
-
-    // Form submission
-    document.getElementById('edit-part-form').addEventListener('submit', function (e) {
+    // Form submit event
+    modal.querySelector('#new-part-form').addEventListener('submit', (e) => {
         e.preventDefault();
-
-        const name = document.getElementById('part-name').value.trim();
+        const name = document.getElementById('part-name').value;
         const machineId = parseInt(document.getElementById('part-machine').value);
         const status = document.getElementById('part-status').value;
 
-        if (!name || !machineId) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
+        const newPart = {
+            id: mockParts.length + 1,
+            name,
+            machineId,
+            status
+        };
 
-        // Update part data
+        mockParts.push(newPart);
+
+        modal.remove();
+        showNotification('Peça Criada', `A peça "${name}" foi criada com sucesso!`, 'success');
+        loadParts();
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function to edit a part
+function editPart(partId) {
+    const part = mockParts.find(p => p.id === partId);
+    if (!part) {
+        showNotification('Erro', 'Peça não encontrada', 'error');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar Peça</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="edit-part-form">
+                <div class="form-group">
+                    <label for="edit-part-name">Nome da Peça:</label>
+                    <input type="text" id="edit-part-name" value="${part.name}" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-part-machine">Máquina:</label>
+                    <select id="edit-part-machine" required>
+                        ${mockMachines.map(machine =>
+        `<option value="${machine.id}" ${machine.id === part.machineId ? 'selected' : ''}>${machine.name}</option>`
+    ).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-part-status">Status:</label>
+                    <select id="edit-part-status" required>
+                        <option value="active" ${part.status === 'active' ? 'selected' : ''}>Ativa</option>
+                        <option value="maintenance" ${part.status === 'maintenance' ? 'selected' : ''}>Em Manutenção</option>
+                        <option value="inactive" ${part.status === 'inactive' ? 'selected' : ''}>Inativa</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Salvar Alterações</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Form submit event
+    modal.querySelector('#edit-part-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('edit-part-name').value;
+        const machineId = parseInt(document.getElementById('edit-part-machine').value);
+        const status = document.getElementById('edit-part-status').value;
+
         part.name = name;
         part.machineId = machineId;
         part.status = status;
 
-        // Show success notification
-        showNotification('Sucesso', 'Peça atualizada com sucesso!', 'success');
+        modal.remove();
+        showNotification('Peça Atualizada', `A peça "${name}" foi atualizada com sucesso!`, 'success');
+        loadParts();
+    });
 
-        // Return to part view
-        viewPart(partId);
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
     });
 }
 
+// Helper function to delete a part
 function deletePart(partId) {
     const part = mockParts.find(p => p.id === partId);
     if (!part) {
-        showNotification('Erro', 'Peça não encontrada!', 'error');
+        showNotification('Erro', 'Peça não encontrada', 'error');
         return;
     }
 
-    // Check if part has tickets
-    const partTickets = mockTickets.filter(t => t.partId === partId);
-    if (partTickets.length > 0) {
-        showNotification(
-            'Não é possível excluir',
-            'Esta peça possui chamados associados e não pode ser excluída.',
-            'error'
-        );
-        return;
-    }
-
-    // Create confirmation modal
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Confirmar Exclusão</h3>
-                <button class="modal-close" id="close-delete-modal">&times;</button>
+                <button class="modal-close">&times;</button>
             </div>
             <div>
-                <p>Tem certeza que deseja excluir a peça <strong>${part.name}</strong>?</p>
-                <p>Esta ação não pode ser desfeita.</p>
-                
+                <p>Tem certeza que deseja excluir a peça <strong>"${part.name}"</strong>?</p>
+                <p style="color: var(--danger-color); font-size: 0.9rem;">Esta ação não pode ser desfeita.</p>
                 <div class="action-buttons" style="margin-top: 1.5rem;">
-                    <button id="confirm-delete" class="btn-danger">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                        Sim, Excluir
-                    </button>
-                    <button id="cancel-delete" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
+                    <button class="btn-danger confirm-delete">Sim, Excluir</button>
+                    <button class="btn-secondary cancel-btn">Cancelar</button>
                 </div>
             </div>
         </div>
@@ -4047,189 +1541,120 @@ function deletePart(partId) {
 
     document.body.appendChild(modal);
 
-    // Event listeners for modal buttons
-    document.getElementById('close-delete-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-
-    document.getElementById('cancel-delete').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-
-    document.getElementById('confirm-delete').addEventListener('click', () => {
-        // Remove part from array
+    // Confirm delete event
+    modal.querySelector('.confirm-delete').addEventListener('click', () => {
         const index = mockParts.findIndex(p => p.id === partId);
-        if (index !== -1) {
-            const machineId = mockParts[index].machineId;
+        if (index > -1) {
             mockParts.splice(index, 1);
-
-            // Remove associated maintenance times
-            const maintenanceTimesToRemove = mockMaintenanceTimes.filter(mt => mt.partId === partId);
-            maintenanceTimesToRemove.forEach(mt => {
-                const mtIndex = mockMaintenanceTimes.findIndex(m => m.id === mt.id);
-                if (mtIndex !== -1) {
-                    mockMaintenanceTimes.splice(mtIndex, 1);
-                }
-            });
-
-            // Show success notification
-            showNotification('Sucesso', 'Peça excluída com sucesso!', 'success');
-
-            // Remove modal
-            document.body.removeChild(modal);
-
-            // Return to parts list
-            loadParts(machineId);
+            modal.remove();
+            showNotification('Peça Excluída', `A peça "${part.name}" foi excluída com sucesso!`, 'success');
+            loadParts();
         }
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
     });
 }
 
-function addMaintenanceType(partId) {
-    const part = mockParts.find(p => p.id === partId);
-    if (!part) {
-        showNotification('Erro', 'Peça não encontrada!', 'error');
+// Filter functions for parts
+function applyPartFilters() {
+    const statusFilter = document.getElementById('filter-status');
+    const machineFilter = document.getElementById('filter-machine');
+
+    if (!statusFilter || !machineFilter) {
+        showNotification('Erro', 'Elementos de filtro não encontrados', 'error');
         return;
     }
 
-    // Create modal
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Adicionar Tipo de Manutenção</h3>
-                <button class="modal-close" id="close-modal">&times;</button>
-            </div>
-            <form id="add-maintenance-type-form">
-                <div class="form-group">
-                    <label for="maintenance-type-name">Tipo de Manutenção:</label>
-                    <input type="text" id="maintenance-type-name" required placeholder="Ex: Troca, Ajuste, Calibração">
-                </div>
-                
-                <div class="form-group">
-                    <label for="maintenance-time">Tempo Estimado (minutos):</label>
-                    <input type="number" id="maintenance-time" required min="1" placeholder="Tempo em minutos">
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Adicionar
-                    </button>
-                    <button type="button" id="cancel-modal" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
+    const statusValue = statusFilter.value;
+    const machineValue = machineFilter.value;
 
-    document.body.appendChild(modal);
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
 
-    // Event listeners for modal buttons
-    document.getElementById('close-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
+    tableRows.forEach(row => {
+        if (row.cells.length >= 4) {
+            const status = row.cells[3].textContent.toLowerCase();
+            const machine = row.cells[2].textContent;
 
-    document.getElementById('cancel-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
+            let showRow = true;
 
-    // Form submission
-    document.getElementById('add-maintenance-type-form').addEventListener('submit', function (e) {
-        e.preventDefault();
+            if (statusValue && !status.includes(statusValue)) {
+                showRow = false;
+            }
 
-        const maintenanceType = document.getElementById('maintenance-type-name').value.trim();
-        const estimatedTime = parseInt(document.getElementById('maintenance-time').value);
+            if (machineValue) {
+                const selectedMachine = mockMachines.find(m => m.id == machineValue);
+                if (selectedMachine && machine !== selectedMachine.name) {
+                    showRow = false;
+                }
+            }
 
-        if (!maintenanceType || isNaN(estimatedTime) || estimatedTime <= 0) {
-            showNotification('Erro', 'Por favor, preencha todos os campos corretamente.', 'error');
-            return;
+            row.style.display = showRow ? '' : 'none';
         }
-
-        // Create new maintenance type
-        const newMaintenanceType = {
-            id: mockMaintenanceTimes.length + 1,
-            partId: partId,
-            maintenanceType,
-            estimatedTime
-        };
-
-        // Add to mock data
-        mockMaintenanceTimes.push(newMaintenanceType);
-
-        // Show success notification
-        showNotification('Sucesso', 'Tipo de manutenção adicionado com sucesso!', 'success');
-
-        // Remove modal
-        document.body.removeChild(modal);
-
-        // Refresh part view
-        viewPart(partId);
     });
+
+    showNotification('Filtros Aplicados',
+        `Filtros aplicados: ${statusValue || 'Todos os status'}, ${machineValue ? 'Máquina selecionada' : 'Todas as máquinas'}`,
+        'info'
+    );
 }
 
+function clearPartFilters() {
+    const statusFilter = document.getElementById('filter-status');
+    const machineFilter = document.getElementById('filter-machine');
+
+    if (statusFilter) statusFilter.value = '';
+    if (machineFilter) machineFilter.value = '';
+
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.style.display = '';
+    });
+
+    showNotification('Filtros Limpos', 'Todos os filtros foram removidos', 'info');
+}
+
+// Load employees function
 function loadEmployees() {
     const contentArea = document.getElementById('content-area');
 
-    let html = `
+    contentArea.innerHTML = `
         <div class="page-title">
-            <h2>Colaboradores</h2>
-            <div class="export-options">
-                <button class="export-btn" id="export-employees-pdf">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                    Exportar para PDF
-                </button>
-            </div>
-        </div>
-        
-        <div class="action-buttons">
+            <h2>Gerenciamento de Colaboradores</h2>
             <button id="new-employee-btn" class="btn-primary">
                 <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    <path fill="currentColor" d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
                 </svg>
                 Novo Colaborador
             </button>
         </div>
         
         <div class="filter-container">
-            <h3>Filtros de Busca</h3>
+            <h3>Filtros</h3>
             <div class="filter-grid">
                 <div class="filter-group">
-                    <label for="filter-employee-id">ID:</label>
-                    <input type="number" id="filter-employee-id" placeholder="Buscar por ID">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-employee-name">Nome:</label>
-                    <input type="text" id="filter-employee-name" placeholder="Digite o nome do colaborador">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-employee-role">Função:</label>
-                    <select id="filter-employee-role">
-                        <option value="">Todas as funções</option>
+                    <label for="filter-role">Função</label>
+                    <select id="filter-role">
+                        <option value="">Todas</option>
                         <option value="operator">Operador</option>
                         <option value="technician">Técnico</option>
                         <option value="manager">Gestor</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="filter-employee-sector">Setor:</label>
-                    <select id="filter-employee-sector">
-                        <option value="">Todos os setores</option>
-                        ${[...new Set(mockUsers.map(u => u.sector))].map(sector =>
-        `<option value="${sector}">${sector}</option>`
-    ).join('')}
+                    <label for="filter-sector">Setor</label>
+                    <select id="filter-sector">
+                        <option value="">Todos</option>
+                        <option value="Produção">Produção</option>
+                        <option value="Logística">Logística</option>
+                        <option value="Moldagem">Moldagem</option>
+                        <option value="Automação">Automação</option>
+                        <option value="Gerência">Gerência</option>
+                        <option value="Administração">Administração</option>
                     </select>
                 </div>
             </div>
@@ -4246,388 +1671,117 @@ function loadEmployees() {
                     <th>Nome</th>
                     <th>Função</th>
                     <th>Setor</th>
-                    <th>E-mail</th>
+                    <th>Email</th>
                     <th>Ações</th>
                 </tr>
             </thead>
-            <tbody id="employees-table-body">
-    `;
-
-    mockUsers.forEach(user => {
-        let roleName = '';
-        switch (user.role) {
-            case 'operator': roleName = 'Operador'; break;
-            case 'technician': roleName = 'Técnico'; break;
-            case 'manager': roleName = 'Gestor'; break;
-            default: roleName = user.role;
-        }
-
-        html += `
-            <tr>
-                <td>${user.id}</td>
-                <td>${user.name}</td>
-                <td>${roleName}</td>
-                <td>${user.sector}</td>
-                <td>${user.email}</td>
-                <td>
-                    <button class="action-btn edit-employee" data-id="${user.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                        </svg>
-                        Editar
-                    </button>
-                    
-                    <button class="action-btn delete-employee" data-id="${user.id}">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                        Excluir
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `
+            <tbody>
+                ${mockUsers.map(user => `
+                    <tr>
+                        <td>${user.id}</td>
+                        <td>${user.name}</td>
+                        <td>${translateRole(user.role)}</td>
+                        <td>${user.sector}</td>
+                        <td>${user.email}</td>
+                        <td class="actions-cell">
+                            <button class="action-btn view-employee" data-id="${user.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                                </svg>
+                                Ver
+                            </button>
+                            <button class="action-btn edit-employee" data-id="${user.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                </svg>
+                                Editar
+                            </button>
+                            <button class="action-btn delete-employee" data-id="${user.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                </svg>
+                                Excluir
+                            </button>
+                        </td>
+                    </tr>
+                `).join('')}
             </tbody>
         </table>
     `;
 
-    contentArea.innerHTML = html;
+    // Add event listeners for the employee management
+    setupEmployeesEventListeners();
+}
 
-    // Event listeners
-    document.getElementById('new-employee-btn').addEventListener('click', showNewEmployeeForm);
+// Setup event listeners for employees
+function setupEmployeesEventListeners() {
+    const newEmployeeBtn = document.getElementById('new-employee-btn');
+    if (newEmployeeBtn) {
+        newEmployeeBtn.addEventListener('click', () => {
+            showNewEmployeeForm();
+        });
+    }
 
-    document.querySelectorAll('.edit-employee').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const userId = parseInt(this.getAttribute('data-id'));
-            editEmployee(userId);
+    document.querySelectorAll('.view-employee').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const employeeId = parseInt(e.currentTarget.getAttribute('data-id'));
+            viewEmployeeDetails(employeeId);
         });
     });
 
-    document.querySelectorAll('.delete-employee').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const userId = parseInt(this.getAttribute('data-id'));
-            deleteEmployee(userId);
+    document.querySelectorAll('.edit-employee').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const employeeId = parseInt(e.currentTarget.getAttribute('data-id'));
+            editEmployee(employeeId);
+        });
+    });
+
+    document.querySelectorAll('.delete-employee').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const employeeId = parseInt(e.currentTarget.getAttribute('data-id'));
+            deleteEmployee(employeeId);
         });
     });
 
     // Filter event listeners
-    document.getElementById('apply-employee-filters').addEventListener('click', applyEmployeeFilters);
-    document.getElementById('clear-employee-filters').addEventListener('click', clearEmployeeFilters);
+    const applyFiltersBtn = document.getElementById('apply-employee-filters');
+    const clearFiltersBtn = document.getElementById('clear-employee-filters');
 
-    // Export listener
-    document.getElementById('export-employees-pdf').addEventListener('click', function () {
-        exportEmployeesToPDF();
-    });
+    if (applyFiltersBtn) {
+        applyFiltersBtn.addEventListener('click', applyEmployeeFilters);
+    }
+
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', clearEmployeeFilters);
+    }
 }
 
-function showNewEmployeeForm() {
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Novo Colaborador</h2>
-            <button id="back-to-employees" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações do Colaborador</h3>
-            <form id="new-employee-form">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="employee-name">Nome Completo:</label>
-                        <input type="text" id="employee-name" required placeholder="Nome completo">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-username">Nome de Usuário:</label>
-                        <input type="text" id="employee-username" required placeholder="Login para acesso">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-password">Senha:</label>
-                        <input type="password" id="employee-password" required placeholder="Senha">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-email">E-mail:</label>
-                        <input type="email" id="employee-email" required placeholder="exemplo@empresa.com">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-role">Função:</label>
-                        <select id="employee-role" required>
-                            <option value="">Selecione uma função</option>
-                            <option value="operator">Operador</option>
-                            <option value="technician">Técnico</option>
-                            <option value="manager">Gestor</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-sector">Setor:</label>
-                        <input type="text" id="employee-sector" required placeholder="Setor de atuação">
-                    </div>
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Salvar Colaborador
-                    </button>
-                    <button type="button" id="cancel-employee" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-employees').addEventListener('click', loadEmployees);
-    document.getElementById('cancel-employee').addEventListener('click', loadEmployees);
-
-    // Form submission
-    document.getElementById('new-employee-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        const name = document.getElementById('employee-name').value.trim();
-        const username = document.getElementById('employee-username').value.trim().toLowerCase();
-        const password = document.getElementById('employee-password').value;
-        const email = document.getElementById('employee-email').value.trim().toLowerCase();
-        const role = document.getElementById('employee-role').value;
-        const sector = document.getElementById('employee-sector').value.trim();
-
-        if (!name || !username || !password || !email || !role || !sector) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
-
-        // Check if username already exists
-        const existingUser = mockUsers.find(u => u.username === username);
-        if (existingUser) {
-            showNotification('Erro', 'Este nome de usuário já está em uso.', 'error');
-            return;
-        }
-
-        // Check if email already exists
-        const existingEmail = mockUsers.find(u => u.email === email);
-        if (existingEmail) {
-            showNotification('Erro', 'Este e-mail já está em uso.', 'error');
-            return;
-        }
-
-        // Create new user
-        const newUser = {
-            id: mockUsers.length + 1,
-            username,
-            password,
-            name,
-            role,
-            sector,
-            email
-        };
-
-        // Add to mock data
-        mockUsers.push(newUser);
-
-        // Show success notification
-        showNotification('Sucesso', 'Colaborador criado com sucesso!', 'success');
-
-        // Return to employees list
-        loadEmployees();
-    });
-}
-
-function editEmployee(userId) {
-    const user = mockUsers.find(u => u.id === userId);
-    if (!user) {
-        showNotification('Erro', 'Colaborador não encontrado!', 'error');
+// Helper function to view employee details
+function viewEmployeeDetails(employeeId) {
+    const employee = mockUsers.find(u => u.id === employeeId);
+    if (!employee) {
+        showNotification('Erro', 'Colaborador não encontrado', 'error');
         return;
     }
 
-    const contentArea = document.getElementById('content-area');
-
-    let html = `
-        <div class="page-title">
-            <h2>Editar Colaborador</h2>
-            <button id="back-to-employees" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                Voltar
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3>Informações do Colaborador</h3>
-            <form id="edit-employee-form">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="employee-name">Nome Completo:</label>
-                        <input type="text" id="employee-name" required placeholder="Nome completo" value="${user.name}">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-username">Nome de Usuário:</label>
-                        <input type="text" id="employee-username" required placeholder="Login para acesso" value="${user.username}" readonly>
-                        <div class="help-text">O nome de usuário não pode ser alterado.</div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-password">Nova Senha (deixe em branco para manter):</label>
-                        <input type="password" id="employee-password" placeholder="Nova senha">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-email">E-mail:</label>
-                        <input type="email" id="employee-email" required placeholder="exemplo@empresa.com" value="${user.email}">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-role">Função:</label>
-                        <select id="employee-role" required>
-                            <option value="">Selecione uma função</option>
-                            <option value="operator" ${user.role === 'operator' ? 'selected' : ''}>Operador</option>
-                            <option value="technician" ${user.role === 'technician' ? 'selected' : ''}>Técnico</option>
-                            <option value="manager" ${user.role === 'manager' ? 'selected' : ''}>Gestor</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="employee-sector">Setor:</label>
-                        <input type="text" id="employee-sector" required placeholder="Setor de atuação" value="${user.sector}">
-                    </div>
-                </div>
-                
-                <div class="action-buttons">
-                    <button type="submit" class="btn-primary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        Salvar Alterações
-                    </button>
-                    <button type="button" id="cancel-edit" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    contentArea.innerHTML = html;
-
-    // Event listeners
-    document.getElementById('back-to-employees').addEventListener('click', loadEmployees);
-    document.getElementById('cancel-edit').addEventListener('click', loadEmployees);
-
-    // Form submission
-    document.getElementById('edit-employee-form').addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        const name = document.getElementById('employee-name').value.trim();
-        const newPassword = document.getElementById('employee-password').value;
-        const email = document.getElementById('employee-email').value.trim().toLowerCase();
-        const role = document.getElementById('employee-role').value;
-        const sector = document.getElementById('employee-sector').value.trim();
-
-        if (!name || !email || !role || !sector) {
-            showNotification('Erro', 'Por favor, preencha todos os campos obrigatórios.', 'error');
-            return;
-        }
-
-        // Check if email already exists (and not the current user's)
-        const existingEmail = mockUsers.find(u => u.email === email && u.id !== userId);
-        if (existingEmail) {
-            showNotification('Erro', 'Este e-mail já está em uso por outro colaborador.', 'error');
-            return;
-        }
-
-        // Update user data
-        user.name = name;
-        user.email = email;
-        user.role = role;
-        user.sector = sector;
-
-        // Update password if provided
-        if (newPassword) {
-            user.password = newPassword;
-        }
-
-        // Show success notification
-        showNotification('Sucesso', 'Colaborador atualizado com sucesso!', 'success');
-
-        // Return to employees list
-        loadEmployees();
-    });
-}
-
-function deleteEmployee(userId) {
-    const user = mockUsers.find(u => u.id === userId);
-    if (!user) {
-        showNotification('Erro', 'Colaborador não encontrado!', 'error');
-        return;
-    }
-
-    // Prevent deleting the currently logged in user
-    if (user.id === currentUser.id) {
-        showNotification('Erro', 'Você não pode excluir seu próprio usuário!', 'error');
-        return;
-    }
-
-    // Check if user has related activities
-    const userTickets = mockTickets.filter(t => t.createdBy === userId || t.assignedTo === userId);
-    if (userTickets.length > 0) {
-        showNotification(
-            'Não é possível excluir',
-            'Este colaborador possui atividades registradas no sistema e não pode ser excluído.',
-            'error'
-        );
-        return;
-    }
-
-    // Create confirmation modal
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Confirmar Exclusão</h3>
-                <button class="modal-close" id="close-delete-modal">&times;</button>
+                <h3>Detalhes do Colaborador</h3>
+                <button class="modal-close">&times;</button>
             </div>
-            <div>
-                <p>Tem certeza que deseja excluir o colaborador <strong>${user.name}</strong>?</p>
-                <p>Esta ação não pode ser desfeita.</p>
-                
-                <div class="action-buttons" style="margin-top: 1.5rem;">
-                    <button id="confirm-delete" class="btn-danger">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                        Sim, Excluir
-                    </button>
-                    <button id="cancel-delete" class="btn-secondary">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
-                        Cancelar
-                    </button>
+            <div class="employee-details">
+                <p><strong>ID:</strong> ${employee.id}</p>
+                <p><strong>Nome:</strong> ${employee.name}</p>
+                <p><strong>Usuário:</strong> ${employee.username}</p>
+                <p><strong>Função:</strong> ${translateRole(employee.role)}</p>
+                <p><strong>Setor:</strong> ${employee.sector}</p>
+                <p><strong>Email:</strong> ${employee.email}</p>
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="editEmployee(${employee.id}); this.closest('.modal-overlay').remove();">Editar</button>
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove();">Fechar</button>
                 </div>
             </div>
         </div>
@@ -4635,240 +1789,1955 @@ function deleteEmployee(userId) {
 
     document.body.appendChild(modal);
 
-    // Event listeners for modal buttons
-    document.getElementById('close-delete-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-
-    document.getElementById('cancel-delete').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-
-    document.getElementById('confirm-delete').addEventListener('click', () => {
-        // Remove user from array
-        const index = mockUsers.findIndex(u => u.id === userId);
-        if (index !== -1) {
-            mockUsers.splice(index, 1);
-
-            // Show success notification
-            showNotification('Sucesso', 'Colaborador excluído com sucesso!', 'success');
-
-            // Remove modal
-            document.body.removeChild(modal);
-
-            // Return to employees list
-            loadEmployees();
-        }
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
     });
 }
 
+// Helper function to show new employee form
+function showNewEmployeeForm() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Novo Colaborador</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="new-employee-form">
+                <div class="form-group">
+                    <label for="employee-name">Nome:</label>
+                    <input type="text" id="employee-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="employee-username">Usuário:</label>
+                    <input type="text" id="employee-username" required>
+                </div>
+                <div class="form-group">
+                    <label for="employee-password">Senha:</label>
+                    <input type="password" id="employee-password" required>
+                </div>
+                <div class="form-group">
+                    <label for="employee-email">Email:</label>
+                    <input type="email" id="employee-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="employee-role">Função:</label>
+                    <select id="employee-role" required>
+                        <option value="">Selecione uma função</option>
+                        <option value="operator">Operador</option>
+                        <option value="technician">Técnico</option>
+                        <option value="manager">Gestor</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="employee-sector">Setor:</label>
+                    <select id="employee-sector" required>
+                        <option value="">Selecione um setor</option>
+                        <option value="Produção">Produção</option>
+                        <option value="Logística">Logística</option>
+                        <option value="Moldagem">Moldagem</option>
+                        <option value="Automação">Automação</option>
+                        <option value="Gerência">Gerência</option>
+                        <option value="Administração">Administração</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Criar Colaborador</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Form submit event
+    modal.querySelector('#new-employee-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('employee-name').value;
+        const username = document.getElementById('employee-username').value;
+        const password = document.getElementById('employee-password').value;
+        const email = document.getElementById('employee-email').value;
+        const role = document.getElementById('employee-role').value;
+        const sector = document.getElementById('employee-sector').value;
+
+        const newEmployee = {
+            id: mockUsers.length + 1,
+            name,
+            username,
+            password,
+            email,
+            role,
+            sector
+        };
+
+        mockUsers.push(newEmployee);
+
+        modal.remove();
+        showNotification('Colaborador Criado', `O colaborador "${name}" foi criado com sucesso!`, 'success');
+        loadEmployees();
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function to edit an employee
+function editEmployee(employeeId) {
+    const employee = mockUsers.find(u => u.id === employeeId);
+    if (!employee) {
+        showNotification('Erro', 'Colaborador não encontrado', 'error');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar Colaborador</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="edit-employee-form">
+                <div class="form-group">
+                    <label for="edit-employee-name">Nome:</label>
+                    <input type="text" id="edit-employee-name" value="${employee.name}" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-employee-username">Usuário:</label>
+                    <input type="text" id="edit-employee-username" value="${employee.username}" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-employee-email">Email:</label>
+                    <input type="email" id="edit-employee-email" value="${employee.email}" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-employee-role">Função:</label>
+                    <select id="edit-employee-role" required>
+                        <option value="operator" ${employee.role === 'operator' ? 'selected' : ''}>Operador</option>
+                        <option value="technician" ${employee.role === 'technician' ? 'selected' : ''}>Técnico</option>
+                        <option value="manager" ${employee.role === 'manager' ? 'selected' : ''}>Gestor</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-employee-sector">Setor:</label>
+                    <select id="edit-employee-sector" required>
+                        <option value="Produção" ${employee.sector === 'Produção' ? 'selected' : ''}>Produção</option>
+                        <option value="Logística" ${employee.sector === 'Logística' ? 'selected' : ''}>Logística</option>
+                        <option value="Moldagem" ${employee.sector === 'Moldagem' ? 'selected' : ''}>Moldagem</option>
+                        <option value="Automação" ${employee.sector === 'Automação' ? 'selected' : ''}>Automação</option>
+                        <option value="Gerência" ${employee.sector === 'Gerência' ? 'selected' : ''}>Gerência</option>
+                        <option value="Administração" ${employee.sector === 'Administração' ? 'selected' : ''}>Administração</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Salvar Alterações</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Form submit event
+    modal.querySelector('#edit-employee-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('edit-employee-name').value;
+        const username = document.getElementById('edit-employee-username').value;
+        const email = document.getElementById('edit-employee-email').value;
+        const role = document.getElementById('edit-employee-role').value;
+        const sector = document.getElementById('edit-employee-sector').value;
+
+        employee.name = name;
+        employee.username = username;
+        employee.email = email;
+        employee.role = role;
+        employee.sector = sector;
+
+        modal.remove();
+        showNotification('Colaborador Atualizado', `O colaborador "${name}" foi atualizado com sucesso!`, 'success');
+        loadEmployees();
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function to delete an employee
+function deleteEmployee(employeeId) {
+    const employee = mockUsers.find(u => u.id === employeeId);
+    if (!employee) {
+        showNotification('Erro', 'Colaborador não encontrado', 'error');
+        return;
+    }
+
+    if (employee.id === currentUser.id) {
+        showNotification('Erro', 'Você não pode excluir seu próprio usuário', 'error');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirmar Exclusão</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div>
+                <p>Tem certeza que deseja excluir o colaborador <strong>"${employee.name}"</strong>?</p>
+                <p style="color: var(--danger-color); font-size: 0.9rem;">Esta ação não pode ser desfeita.</p>
+                <div class="action-buttons" style="margin-top: 1.5rem;">
+                    <button class="btn-danger confirm-delete">Sim, Excluir</button>
+                    <button class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Confirm delete event
+    modal.querySelector('.confirm-delete').addEventListener('click', () => {
+        const index = mockUsers.findIndex(u => u.id === employeeId);
+        if (index > -1) {
+            mockUsers.splice(index, 1);
+            modal.remove();
+            showNotification('Colaborador Excluído', `O colaborador "${employee.name}" foi excluído com sucesso!`, 'success');
+            loadEmployees();
+        }
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Filter functions for employees
 function applyEmployeeFilters() {
-    const employeeId = document.getElementById('filter-employee-id').value;
-    const employeeName = document.getElementById('filter-employee-name').value.toLowerCase();
-    const roleFilter = document.getElementById('filter-employee-role').value;
-    const sectorFilter = document.getElementById('filter-employee-sector').value;
+    const roleFilter = document.getElementById('filter-role');
+    const sectorFilter = document.getElementById('filter-sector');
 
-    let filteredEmployees = mockUsers;
-
-    // Apply filters
-    if (employeeId) {
-        filteredEmployees = filteredEmployees.filter(e => e.id === parseInt(employeeId));
+    if (!roleFilter || !sectorFilter) {
+        showNotification('Erro', 'Elementos de filtro não encontrados', 'error');
+        return;
     }
 
-    if (employeeName) {
-        filteredEmployees = filteredEmployees.filter(e =>
-            e.name.toLowerCase().includes(employeeName) ||
-            e.username.toLowerCase().includes(employeeName)
-        );
-    }
+    const roleValue = roleFilter.value;
+    const sectorValue = sectorFilter.value;
 
-    if (roleFilter) {
-        filteredEmployees = filteredEmployees.filter(e => e.role === roleFilter);
-    }
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
 
-    if (sectorFilter) {
-        filteredEmployees = filteredEmployees.filter(e => e.sector === sectorFilter);
-    }
+    tableRows.forEach(row => {
+        if (row.cells.length >= 4) {
+            const role = row.cells[2].textContent;
+            const sector = row.cells[3].textContent;
 
-    // Update table
-    updateEmployeesTable(filteredEmployees);
+            let showRow = true;
 
-    // Show notification
-    showNotification(
-        'Filtros aplicados',
-        `${filteredEmployees.length} colaboradores encontrados`,
+            if (roleValue && !role.toLowerCase().includes(translateRole(roleValue).toLowerCase())) {
+                showRow = false;
+            }
+
+            if (sectorValue && sector !== sectorValue) {
+                showRow = false;
+            }
+
+            row.style.display = showRow ? '' : 'none';
+        }
+    });
+
+    showNotification('Filtros Aplicados',
+        `Filtros aplicados: ${roleValue || 'Todas as funções'}, ${sectorValue || 'Todos os setores'}`,
         'info'
     );
 }
 
 function clearEmployeeFilters() {
-    document.getElementById('filter-employee-id').value = '';
-    document.getElementById('filter-employee-name').value = '';
-    document.getElementById('filter-employee-role').value = '';
-    document.getElementById('filter-employee-sector').value = '';
+    const roleFilter = document.getElementById('filter-role');
+    const sectorFilter = document.getElementById('filter-sector');
 
-    // Reset table to show all employees
-    updateEmployeesTable(mockUsers);
+    if (roleFilter) roleFilter.value = '';
+    if (sectorFilter) sectorFilter.value = '';
 
-    // Show notification
-    showNotification('Filtros limpos', 'Todos os filtros foram removidos', 'info');
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.style.display = '';
+    });
+
+    showNotification('Filtros Limpos', 'Todos os filtros foram removidos', 'info');
 }
 
-function updateEmployeesTable(employees) {
-    const tableBody = document.getElementById('employees-table-body');
-    if (!tableBody) return;
+// Load reports function
+function loadReports() {
+    const contentArea = document.getElementById('content-area');
 
-    // Clear existing rows
-    tableBody.innerHTML = '';
+    contentArea.innerHTML = `
+        <div class="page-title">
+            <h2>Relatórios e Análises</h2>
+        </div>
+        
+        <div class="filter-container">
+            <h3>Período do Relatório</h3>
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label for="report-start-date">Data Inicial</label>
+                    <input type="date" id="report-start-date" value="${getThirtyDaysAgo()}">
+                </div>
+                <div class="filter-group">
+                    <label for="report-end-date">Data Final</label>
+                    <input type="date" id="report-end-date" value="${getTodayDate()}">
+                </div>
+                <div class="filter-group">
+                    <label for="report-type">Tipo de Relatório</label>
+                    <select id="report-type">
+                        <option value="performance">Desempenho de Manutenção</option>
+                        <option value="failure">Análise de Falhas</option>
+                        <option value="cost">Custo de Manutenção</option>
+                        <option value="workload">Carga de Trabalho</option>
+                    </select>
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button id="generate-report" class="btn-primary">Gerar Relatório</button>
+                <button id="save-report" class="btn-secondary">Salvar Configuração</button>
+            </div>
+        </div>
+        
+        <div class="export-options">
+            <button class="export-btn" id="export-pdf">
+                <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+            </svg>
+                Exportar PDF
+            </button>
+            <button class="export-btn" id="export-csv">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+            </svg>
+                Exportar CSV
+            </button>
+        </div>
+        
+        <div class="chart-container">
+            <h3>Tempo Médio de Resolução (Últimos 30 dias)</h3>
+            <canvas id="resolutionTimeChart"></canvas>
+        </div>
+        
+        <div class="chart-container">
+            <h3>Distribuição de Chamados por Máquina</h3>
+            <canvas id="ticketDistributionChart"></canvas>
+        </div>
+        
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <h3>Eficiência Média</h3>
+                <div class="dashboard-metric">87%</div>
+                <div class="dashboard-trend">
+                    <span class="trend-up">↑ 5%</span> em relação ao período anterior
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h3>Tempo Médio de Resposta</h3>
+                <div class="dashboard-metric">1h 23min</div>
+                <div class="dashboard-trend">
+                    <span class="trend-down">↓ 15%</span> em relação ao período anterior
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h3>Taxa de Resolução na 1ª Visita</h3>
+                <div class="dashboard-metric">72%</div>
+                <div class="dashboard-trend">
+                    <span class="trend-up">↑ 8%</span> em relação ao período anterior
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h3>Satisfação com o Atendimento</h3>
+                <div class="dashboard-metric">4.7/5.0</div>
+                <div class="dashboard-trend">
+                    <span class="trend-up">↑ 0.3</span> em relação ao período anterior
+                </div>
+            </div>
+        </div>
+    `;
 
-    if (employees.length === 0) {
-        // No results
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="6" class="help-noresult">Nenhum colaborador encontrado com os filtros aplicados</td>
-            </tr>
+    // Initialize Charts
+    setTimeout(() => {
+        initializeReportCharts();
+    }, 100);
+
+    // Add event listeners for report actions with null checks
+    const generateBtn = document.getElementById('generate-report');
+    if (generateBtn) {
+        generateBtn.addEventListener('click', generateReport);
+    }
+
+    const exportPdfBtn = document.getElementById('export-pdf');
+    if (exportPdfBtn) {
+        exportPdfBtn.addEventListener('click', exportReportPDF);
+    }
+
+    const exportCsvBtn = document.getElementById('export-csv');
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', exportReportCSV);
+    }
+
+    const saveReportBtn = document.getElementById('save-report');
+    if (saveReportBtn) {
+        saveReportBtn.addEventListener('click', () => {
+            showNotification('Configuração Salva', 'A configuração do relatório foi salva com sucesso!', 'success');
+        });
+    }
+}
+
+// Initialize charts for reports page
+function initializeReportCharts() {
+    // Resolution Time Chart
+    const resolutionTimeCtx = document.getElementById('resolutionTimeChart');
+    if (resolutionTimeCtx) {
+        const ctx = resolutionTimeCtx.getContext('2d');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['1/10', '5/10', '10/10', '15/10', '20/10', '25/10', '30/10'],
+                    datasets: [{
+                        label: 'Tempo Médio (minutos)',
+                        data: [45, 39, 52, 41, 35, 30, 33],
+                        backgroundColor: 'rgba(65, 90, 119, 0.1)',
+                        borderColor: '#415a77',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#1b263b',
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Minutos'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Data'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // Ticket Distribution Chart
+    const ticketDistributionCtx = document.getElementById('ticketDistributionChart');
+    if (ticketDistributionCtx) {
+        const ctx = ticketDistributionCtx.getContext('2d');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Máquina de Embalagem', 'Esteira Transportadora', 'Prensa Hidráulica', 'Outras'],
+                    datasets: [{
+                        data: [35, 25, 20, 20],
+                        backgroundColor: ['#415a77', '#778da9', '#0d1b2a', '#5bc0be']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
+
+// Export report to PDF
+function exportReportPDF() {
+    showNotification('Exportação Iniciada', 'O relatório está sendo exportado para PDF...', 'info');
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Add title
+        doc.setFontSize(20);
+        doc.text('Relatório de Manutenção', 20, 30);
+
+        // Add generation date
+        doc.setFontSize(12);
+        doc.text(`Data de Geração: ${new Date().toLocaleDateString('pt-BR')}`, 20, 45);
+
+        // Add performance metrics
+        doc.setFontSize(16);
+        doc.text('Métricas de Desempenho:', 20, 65);
+
+        doc.setFontSize(12);
+        doc.text('• Eficiência Média: 87%', 30, 80);
+        doc.text('• Tempo Médio de Resposta: 1h 23min', 30, 95);
+        doc.text('• Taxa de Resolução na 1ª Visita: 72%', 30, 110);
+        doc.text('• Satisfação com o Atendimento: 4.7/5.0', 30, 125);
+
+        // Add tickets summary
+        doc.setFontSize(16);
+        doc.text('Resumo de Chamados:', 20, 150);
+
+        doc.setFontSize(12);
+        doc.text(`• Total de Chamados: ${mockTickets.length}`, 30, 165);
+        doc.text(`• Chamados em Aberto: ${mockTickets.filter(t => t.status === 'open').length}`, 30, 180);
+        doc.text(`• Chamados em Andamento: ${mockTickets.filter(t => t.status === 'inProgress').length}`, 30, 195);
+        doc.text(`• Chamados Concluídos: ${mockTickets.filter(t => t.status === 'closed').length}`, 30, 210);
+
+        // Add trend analysis
+        doc.setFontSize(16);
+        doc.text('Análise de Tendências:', 20, 235);
+
+        doc.setFontSize(12);
+        doc.text('• Eficiência: ↑ 5% em relação ao período anterior', 30, 250);
+        doc.text('• Tempo de Resposta: ↓ 15% em relação ao período anterior', 30, 265);
+        doc.text('• Taxa de Resolução: ↑ 8% em relação ao período anterior', 30, 280);
+
+        // Save the PDF
+        doc.save(`relatorio-manutencao-${new Date().toISOString().split('T')[0]}.pdf`);
+
+        showNotification('Exportação Concluída', 'O relatório foi exportado com sucesso!', 'success');
+    } catch (error) {
+        console.error('Erro ao gerar PDF:', error);
+        showNotification('Erro na Exportação', 'Ocorreu um erro ao gerar o PDF. Tentando exportação alternativa...', 'warning');
+
+        // Fallback to text export
+        const reportData = `
+Relatório de Manutenção
+Data de Geração: ${new Date().toLocaleDateString('pt-BR')}
+
+Métricas de Desempenho:
+- Eficiência Média: 87%
+- Tempo Médio de Resposta: 1h 23min
+- Taxa de Resolução na 1ª Visita: 72%
+- Satisfação com o Atendimento: 4.7/5.0
+
+Resumo de Chamados:
+- Total de Chamados: ${mockTickets.length}
+- Chamados em Aberto: ${mockTickets.filter(t => t.status === 'open').length}
+- Chamados em Andamento: ${mockTickets.filter(t => t.status === 'inProgress').length}
+- Chamados Concluídos: ${mockTickets.filter(t => t.status === 'closed').length}
+
+Análise de Tendências:
+- Eficiência: ↑ 5% em relação ao período anterior
+- Tempo de Resposta: ↓ 15% em relação ao período anterior
+- Taxa de Resolução: ↑ 8% em relação ao período anterior
+- Satisfação: ↑ 0.3 em relação ao período anterior
         `;
+
+        // Create and download file
+        const blob = new Blob([reportData], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `relatorio-manutencao-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+}
+
+// Load tickets function
+function loadTickets() {
+    const contentArea = document.getElementById('content-area');
+
+    // Prepare status labels for better display
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 'open': return '<span class="status-badge status-warning">Em Aberto</span>';
+            case 'inProgress': return '<span class="status-badge status-info">Em Andamento</span>';
+            case 'closed': return '<span class="status-badge status-ok">Concluído</span>';
+            default: return '<span class="status-badge">Desconhecido</span>';
+        }
+    };
+
+    // Get machine name by ID
+    const getMachineName = (id) => {
+        const machine = mockMachines.find(m => m.id === id);
+        return machine ? machine.name : 'Desconhecido';
+    };
+
+    // Get part name by ID
+    const getPartName = (id) => {
+        const part = mockParts.find(p => p.id === id);
+        return part ? part.name : 'Desconhecido';
+    };
+
+    // Get user name by ID
+    const getUserName = (id) => {
+        if (!id) return 'Não atribuído';
+        const user = mockUsers.find(u => u.id === id);
+        return user ? user.name : 'Desconhecido';
+    };
+
+    // Format date for display
+    const formatDate = (date) => {
+        if (!date) return 'N/A';
+        return new Date(date).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    contentArea.innerHTML = `
+        <div class="page-title">
+            <h2>Chamados de Manutenção</h2>
+            <button id="new-ticket-btn" class="btn-primary">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+                </svg>
+                Novo Chamado
+            </button>
+        </div>
+        
+        <div class="filter-container">
+            <h3>Filtros</h3>
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label for="filter-status">Status</label>
+                    <select id="filter-status">
+                        <option value="">Todos</option>
+                        <option value="open">Em Aberto</option>
+                        <option value="inProgress">Em Andamento</option>
+                        <option value="closed">Concluído</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filter-machine">Máquina</label>
+                    <select id="filter-machine">
+                        <option value="">Todas</option>
+                        ${mockMachines.map(machine => `<option value="${machine.id}">${machine.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filter-date">Data (início)</label>
+                    <input type="date" id="filter-date">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button id="apply-filters" class="btn-primary">Aplicar Filtros</button>
+                <button id="clear-filters" class="btn-secondary">Limpar Filtros</button>
+            </div>
+        </div>
+        
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Máquina</th>
+                    <th>Peça</th>
+                    <th>Descrição</th>
+                    <th>Status</th>
+                    <th>Abertura</th>
+                    <th>Técnico</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${mockTickets.map(ticket => `
+                    <tr>
+                        <td>${ticket.id}</td>
+                        <td>${getMachineName(ticket.machineId)}</td>
+                        <td>${getPartName(ticket.partId)}</td>
+                        <td>${ticket.description}</td>
+                        <td>${getStatusLabel(ticket.status)}</td>
+                        <td>${formatDate(ticket.createdAt)}</td>
+                        <td>${getUserName(ticket.assignedTo)}</td>
+                        <td class="actions-cell">
+                            <button class="action-btn view-ticket" data-id="${ticket.id}">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                    <path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                                </svg>
+                                Ver
+                            </button>
+                            ${ticket.status === 'open' && currentUser.role === 'technician' ? `
+                                <button class="action-btn start-maintenance" data-id="${ticket.id}">Iniciar</button>
+                            ` : ''}
+                            ${ticket.status === 'inProgress' && (currentUser.id === ticket.assignedTo || currentUser.role === 'manager') ? `
+                                <button class="action-btn finish-maintenance" data-id="${ticket.id}">Concluir</button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    // Add event listeners for the ticket actions
+    viewTicketDetailsEventListener();
+    startMaintenanceEventListener();
+    finishMaintenanceEventListener();
+
+    // Event listener for new ticket button
+    document.getElementById('new-ticket-btn').addEventListener('click', () => {
+        showNewTicketForm();
+    });
+
+    // Apply filters event
+    document.getElementById('apply-filters').addEventListener('click', filterTickets);
+
+    // Clear filters event
+    document.getElementById('clear-filters').addEventListener('click', clearFilters);
+}
+
+// Helper function for viewing ticket details
+function viewTicketDetailsEventListener() {
+    document.querySelectorAll('.view-ticket').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const ticketId = parseInt(e.currentTarget.getAttribute('data-id'));
+            viewTicketDetails(ticketId);
+        });
+    });
+}
+
+// Helper function for starting maintenance
+function startMaintenanceEventListener() {
+    document.querySelectorAll('.start-maintenance').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const ticketId = parseInt(e.currentTarget.getAttribute('data-id'));
+            startMaintenance(ticketId);
+        });
+    });
+}
+
+// Helper function for finishing maintenance
+function finishMaintenanceEventListener() {
+    document.querySelectorAll('.finish-maintenance').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const ticketId = parseInt(e.currentTarget.getAttribute('data-id'));
+            finishMaintenance(ticketId);
+        });
+    });
+}
+
+// Helper function to view ticket details
+function viewTicketDetails(ticketId) {
+    const ticket = mockTickets.find(t => t.id === ticketId);
+    if (!ticket) {
+        showNotification('Erro', 'Chamado não encontrado', 'error');
         return;
     }
 
-    // Add rows for each employee
-    employees.forEach(user => {
-        let roleName = '';
-        switch (user.role) {
-            case 'operator': roleName = 'Operador'; break;
-            case 'technician': roleName = 'Técnico'; break;
-            case 'manager': roleName = 'Gestor'; break;
-            default: roleName = user.role;
+    // Implementation for viewing ticket details
+    showNotification('Detalhes do Chamado', `Visualizando detalhes do chamado #${ticketId}`, 'info');
+    // In a real app, this would open a modal or navigate to a details page
+}
+
+// Helper function to show new ticket form
+function showNewTicketForm() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Novo Chamado</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="new-ticket-form">
+                <div class="form-group">
+                    <label for="ticket-machine">Máquina:</label>
+                    <select id="ticket-machine" required>
+                        <option value="">Selecione uma máquina</option>
+                        ${mockMachines.map(machine => `<option value="${machine.id}">${machine.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ticket-part">Peça:</label>
+                    <select id="ticket-part" required disabled>
+                        <option value="">Selecione uma máquina primeiro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ticket-description">Descrição do Problema:</label>
+                    <textarea id="ticket-description" rows="4" required placeholder="Descreva o problema encontrado..."></textarea>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn-primary">Criar Chamado</button>
+                    <button type="button" class="btn-secondary cancel-btn">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Machine selection changes available parts
+    const machineSelect = document.getElementById('ticket-machine');
+    const partSelect = document.getElementById('ticket-part');
+
+    machineSelect.addEventListener('change', () => {
+        const machineId = parseInt(machineSelect.value);
+        partSelect.disabled = !machineId;
+
+        // Reset parts dropdown
+        partSelect.innerHTML = '<option value="">Selecione uma peça</option>';
+
+        if (machineId) {
+            // Get parts for selected machine
+            const machineParts = mockParts.filter(p => p.machineId === machineId);
+            machineParts.forEach(part => {
+                const option = document.createElement('option');
+                option.value = part.id;
+                option.textContent = part.name;
+                partSelect.appendChild(option);
+            });
         }
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${user.id}</td>
-            <td>${user.name}</td>
-            <td>${roleName}</td>
-            <td>${user.sector}</td>
-            <td>${user.email}</td>
-            <td>
-                <button class="action-btn edit-employee" data-id="${user.id}">
-                    <svg viewBox="0 0 24 24" width="16" height="16">
-                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                    </svg>
-                    Editar
-                </button>
-                
-                <button class="action-btn delete-employee" data-id="${user.id}">
-                    <svg viewBox="0 0 24 24" width="16" height="16">
-                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                    </svg>
-                    Excluir
-                </button>
-            </td>
-        `;
-
-        tableBody.appendChild(row);
     });
 
-    // Re-attach event listeners
-    document.querySelectorAll('.edit-employee').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const userId = parseInt(this.getAttribute('data-id'));
-            editEmployee(userId);
+    // Form submit event
+    modal.querySelector('#new-ticket-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const machineId = parseInt(document.getElementById('ticket-machine').value);
+        const partId = parseInt(document.getElementById('ticket-part').value);
+        const description = document.getElementById('ticket-description').value;
+
+        // Create new ticket
+        const newTicket = {
+            id: mockTickets.length + 1,
+            machineId,
+            partId,
+            maintenanceTypeId: null, // To be determined by technician
+            description,
+            createdBy: currentUser.id,
+            status: 'open',
+            createdAt: new Date(),
+            assignedTo: null,
+            startedAt: null,
+            estimatedTime: null,
+            finishedAt: null
+        };
+
+        mockTickets.push(newTicket);
+
+        modal.remove();
+        showNotification('Chamado Criado', `Chamado #${newTicket.id} criado com sucesso!`, 'success');
+
+        // Create notification for technicians
+        if (window.notificationSystem) {
+            window.notificationSystem.createNotification(
+                'ticket',
+                `Novo chamado #${newTicket.id} criado para ${getMachineName(machineId)}`,
+                null,
+                newTicket.id
+            );
+        }
+
+        // Reload tickets to reflect changes
+        loadTickets();
+    });
+
+    // Close modal events
+    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+}
+
+// Helper function for starting maintenance
+function startMaintenance(ticketId) {
+    const ticket = mockTickets.find(t => t.id === ticketId);
+    if (!ticket) {
+        showNotification('Erro', 'Chamado não encontrado', 'error');
+        return;
+    }
+
+    ticket.status = 'inProgress';
+    ticket.assignedTo = currentUser.id;
+    ticket.startedAt = new Date();
+
+    // Find the estimated time for this maintenance
+    const maintenanceType = mockMaintenanceTimes.find(mt => mt.partId === ticket.partId);
+    ticket.estimatedTime = maintenanceType ? maintenanceType.estimatedTime : 60; // Default to 60 min
+
+    showNotification('Manutenção Iniciada', `Você iniciou a manutenção do chamado #${ticketId}`, 'success');
+
+    // Reload tickets to reflect changes
+    loadTickets();
+}
+
+// Helper function for finishing maintenance
+function finishMaintenance(ticketId) {
+    const ticket = mockTickets.find(t => t.id === ticketId);
+    if (!ticket) {
+        showNotification('Erro', 'Chamado não encontrado', 'error');
+        return;
+    }
+
+    ticket.status = 'closed';
+    ticket.finishedAt = new Date();
+
+    showNotification('Manutenção Concluída', `Manutenção do chamado #${ticketId} foi concluída com sucesso`, 'success');
+
+    // Reload tickets to reflect changes
+    loadTickets();
+}
+
+// Filter tickets based on selected criteria
+function filterTickets() {
+    const statusFilter = document.getElementById('filter-status');
+    const machineFilter = document.getElementById('filter-machine');
+    const dateFilter = document.getElementById('filter-date');
+
+    if (!statusFilter || !machineFilter || !dateFilter) {
+        showNotification('Erro', 'Elementos de filtro não encontrados', 'error');
+        return;
+    }
+
+    const statusValue = statusFilter.value;
+    const machineValue = machineFilter.value;
+    const dateValue = dateFilter.value;
+
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+
+    tableRows.forEach(row => {
+        if (row.cells.length >= 6) {
+            const status = row.cells[4].textContent.toLowerCase();
+            const machine = row.cells[1].textContent;
+            const dateText = row.cells[5].textContent;
+
+            let showRow = true;
+
+            if (statusValue && !status.includes(statusValue.replace('Progress', ' andamento').replace('open', 'aberto').replace('closed', 'concluído'))) {
+                showRow = false;
+            }
+
+            if (machineValue) {
+                const selectedMachine = mockMachines.find(m => m.id == machineValue);
+                if (selectedMachine && machine !== selectedMachine.name) {
+                    showRow = false;
+                }
+            }
+
+            if (dateValue && dateText !== 'N/A') {
+                try {
+                    const rowDateParts = dateText.split(' ')[0].split('/');
+                    if (rowDateParts.length === 3) {
+                        const rowDate = new Date(rowDateParts[2], rowDateParts[1] - 1, rowDateParts[0]);
+                        const filterDate = new Date(dateValue);
+                        if (rowDate.toDateString() !== filterDate.toDateString()) {
+                            showRow = false;
+                        }
+                    }
+                } catch (error) {
+                    // Skip date filtering if date parsing fails
+                }
+            }
+
+            row.style.display = showRow ? '' : 'none';
+        }
+    });
+
+    showNotification('Filtros Aplicados', 'Os chamados foram filtrados conforme selecionado', 'info');
+}
+
+// Clear applied filters
+function clearFilters() {
+    const statusFilter = document.getElementById('filter-status');
+    const machineFilter = document.getElementById('filter-machine');
+    const dateFilter = document.getElementById('filter-date');
+
+    if (statusFilter) statusFilter.value = '';
+    if (machineFilter) machineFilter.value = '';
+    if (dateFilter) dateFilter.value = '';
+
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.style.display = '';
+    });
+
+    showNotification('Filtros Limpos', 'Os filtros foram removidos', 'info');
+}
+
+// Load dashboard function
+function loadDashboard() {
+    const contentArea = document.getElementById('content-area');
+    contentArea.innerHTML = `
+        <div class="page-title">
+            <h2>Dashboard</h2>
+            <div class="export-options">
+                <button class="export-btn" id="dashboard-export-pdf">
+                    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+                </svg>
+                    Exportar PDF
+                </button>
+                <button class="export-btn" id="dashboard-export-csv">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                </svg>
+                    Exportar CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <h3>Total de Chamados</h3>
+                <div class="dashboard-metric">${mockTickets.length}</div>
+                <div class="dashboard-trend">
+                    <span class="trend-up">↑ 12%</span> em relação ao mês anterior
+                </div>
+            </div>
+
+            <div class="dashboard-card">
+                <h3>Chamados em Aberto</h3>
+                <div class="dashboard-metric">${mockTickets.filter(t => t.status === 'open').length}</div>
+                <div class="dashboard-trend">
+                    <span class="trend-down">↓ 5%</span> em relação ao mês anterior
+                </div>
+            </div>
+
+            <div class="dashboard-card">
+                <h3>Chamados em Andamento</h3>
+                <div class="dashboard-metric">${mockTickets.filter(t => t.status === 'inProgress').length}</div>
+                <div class="dashboard-trend">
+                    <span class="trend-up">↑ 8%</span> em relação ao mês anterior
+                </div>
+            </div>
+
+            <div class="dashboard-card">
+                <h3>Chamados Concluídos</h3>
+                <div class="dashboard-metric">${mockTickets.filter(t => t.status === 'closed').length}</div>
+                <div class="dashboard-trend">
+                    <span class="trend-up">↑ 15%</span> em relação ao mês anterior
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3>Chamados por Status</h3>
+            <canvas id="statusChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <h3>Tempo Médio de Resolução por Tipo de Manutenção</h3>
+            <canvas id="timeChart"></canvas>
+        </div>
+    `;
+
+    // Initialize Charts
+    initializeCharts();
+
+    // Add event listeners for export buttons
+    document.getElementById('dashboard-export-pdf').addEventListener('click', () => {
+        showNotification('Exportação Iniciada', 'O relatório está sendo gerado em PDF...', 'info');
+        setTimeout(() => {
+            const dashboardData = `
+Dashboard de Manutenção
+Generated on: ${new Date().toLocaleDateString('pt-BR')}
+
+Métricas Principais:
+- Total de Chamados: ${mockTickets.length}
+- Chamados em Aberto: ${mockTickets.filter(t => t.status === 'open').length}
+- Chamados em Andamento: ${mockTickets.filter(t => t.status === 'inProgress').length}
+- Chamados Concluídos: ${mockTickets.filter(t => t.status === 'closed').length}
+
+Tendências:
+- Total: ↑ 12% em relação ao mês anterior
+- Em Aberto: ↓ 5% em relação ao mês anterior
+- Em Andamento: ↑ 8% em relação ao mês anterior
+- Concluídos: ↑ 15% em relação ao mês anterior
+            `;
+
+            const blob = new Blob([dashboardData], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `dashboard-${new Date().toISOString().split('T')[0]}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            showNotification('Exportação Concluída', 'O relatório em PDF foi gerado com sucesso!', 'success');
+        }, 2000);
+    });
+
+    document.getElementById('dashboard-export-csv').addEventListener('click', () => {
+        showNotification('Exportação Iniciada', 'Os dados estão sendo exportados em CSV...', 'info');
+        setTimeout(() => {
+            exportReportCSV(); // Use the same CSV export function
+        }, 500);
+    });
+}
+
+// Initialize charts for dashboard
+function initializeCharts() {
+    // Status Chart
+    const statusCtx = document.getElementById('statusChart').getContext('2d');
+    if (statusCtx) {
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Em Aberto', 'Em Andamento', 'Concluídos'],
+                datasets: [{
+                    label: 'Quantidade',
+                    data: [
+                        mockTickets.filter(t => t.status === 'open').length,
+                        mockTickets.filter(t => t.status === 'inProgress').length,
+                        mockTickets.filter(t => t.status === 'closed').length
+                    ],
+                    backgroundColor: [
+                        '#ffc857', // warning
+                        '#4cc9f0', // info
+                        '#2a9d8f'  // success
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            font: {
+                                size: 14
+                            }
+                        }
+                    },
+                    datalabels: {
+                        color: '#fff',
+                        font: {
+                            weight: 'bold',
+                            size: 14
+                        },
+                        formatter: (value, ctx) => {
+                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = (value * 100 / total).toFixed(1) + '%';
+                            return percentage;
+                        }
+                    }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true
+                }
+            }
+        });
+    }
+
+    // Time Chart
+    const timeCtx = document.getElementById('timeChart').getContext('2d');
+    if (timeCtx) {
+        new Chart(timeCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Ajuste', 'Troca', 'Calibração', 'Reparo', 'Lubrificação', 'Tensionamento'],
+                datasets: [{
+                    label: 'Tempo Médio (minutos)',
+                    data: [35, 120, 37.5, 90, 20, 30],
+                    backgroundColor: '#415a77',
+                    borderColor: '#1b263b',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 14
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Minutos',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Tipo de Manutenção',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                },
+                animation: {
+                    duration: 2000,
+                    easing: 'easeOutQuart'
+                }
+            }
+        });
+    }
+}
+
+// Toggle between dark and light mode
+function enableDarkMode() {
+    document.body.classList.add('dark-mode');
+    document.getElementById('theme-switch').checked = true;
+    darkMode = true;
+    localStorage.setItem('darkMode', 'true');
+}
+
+function enableLightMode() {
+    document.body.classList.remove('dark-mode');
+    document.getElementById('theme-switch').checked = false;
+    darkMode = false;
+    localStorage.setItem('darkMode', 'false');
+}
+
+// Mock functions for forgot password - to be used on login page
+function showForgotPasswordForm() {
+    document.getElementById('login-container').classList.add('hidden');
+    document.getElementById('password-recovery-container').classList.remove('hidden');
+
+    // Add event listeners for recovery form
+    document.getElementById('recovery-form').addEventListener('submit', handlePasswordRecovery);
+    document.getElementById('back-to-login').addEventListener('click', () => {
+        document.getElementById('password-recovery-container').classList.add('hidden');
+        document.getElementById('login-container').classList.remove('hidden');
+    });
+}
+
+function handlePasswordRecovery(e) {
+    e.preventDefault();
+    const email = document.getElementById('recovery-email').value;
+
+    // Simulate sending recovery email
+    showNotification('Email Enviado', `Um link de recuperação foi enviado para ${email}. Verifique sua caixa de entrada.`, 'success');
+
+    // Go back to login screen after 2 seconds
+    setTimeout(() => {
+        document.getElementById('password-recovery-container').classList.add('hidden');
+        document.getElementById('login-container').classList.remove('hidden');
+    }, 2000);
+}
+
+// Sistema de consentimento de cookies
+function checkCookieConsent() {
+    const cookieConsent = document.getElementById('cookie-consent');
+
+    // Verificar se o usuário já aceitou os cookies
+    if (getCookie('cookieConsent') !== 'accepted') {
+        // Exibir o banner de consentimento após um pequeno delay
+        setTimeout(() => {
+            cookieConsent.classList.add('show');
+            // Anunciar para leitores de tela
+            announceToScreenReader('Aviso importante sobre política de privacidade e cookies');
+        }, 1000);
+    }
+
+    // Event listeners para os botões do banner
+    document.getElementById('cookie-accept').addEventListener('click', () => {
+        acceptCookies();
+    });
+
+    document.getElementById('cookie-settings').addEventListener('click', () => {
+        showCookieSettings();
+    });
+
+    document.getElementById('privacy-policy-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        showPrivacyPolicy();
+    });
+
+    document.getElementById('terms-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        showTermsOfUse();
+    });
+}
+
+// Aceitar cookies e armazenar consentimento
+function acceptCookies() {
+    // Definir cookie de consentimento válido por 180 dias
+    setCookie('cookieConsent', 'accepted', 180);
+
+    // Fechar o banner
+    const cookieConsent = document.getElementById('cookie-consent');
+    cookieConsent.classList.remove('show');
+
+    // Notificar o usuário
+    showNotification('Cookies Aceitos', 'Obrigado por aceitar nossos cookies e política de privacidade!', 'success');
+
+    // Anunciar para leitores de tela
+    announceToScreenReader('Cookies aceitos. Obrigado por concordar com nossa política de privacidade.');
+}
+
+// Mostrar configurações de cookies (em uma implementação real, isso abriria um modal com opções)
+function showCookieSettings() {
+    // Implementation simulada - em um cenário real, abriria um modal com configurações detalhadas
+    showNotification('Configurações de Cookies', 'As configurações detalhadas de cookies serão implementadas em breve.', 'info');
+
+    // Por enquanto, apenas aceita os cookies essenciais
+    setCookie('cookieConsent', 'essentials', 180);
+
+    // Fechar o banner
+    const cookieConsent = document.getElementById('cookie-consent');
+    cookieConsent.classList.remove('show');
+}
+
+// Mostrar política de privacidade (simulado)
+function showPrivacyPolicy() {
+    // Implementação simulada - em um cenário real, abriria um modal ou redirecionaria para página de política
+    showNotification('Política de Privacidade', 'A política de privacidade completa seria exibida aqui.', 'info');
+}
+
+// Mostrar termos de uso (simulado)
+function showTermsOfUse() {
+    // Implementação simulada - em um cenário real, abriria um modal ou redirecionaria para página de termos
+    showNotification('Termos de Uso', 'Os termos de uso completos seriam exibidos aqui.', 'info');
+}
+
+// Função para definir cookies
+function setCookie(name, value, days) {
+    let expires = '';
+    if (days) {
+        const date = new Date();
+        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        expires = '; expires=' + date.toUTCString();
+    }
+    document.cookie = name + '=' + value + expires + '; path=/; SameSite=Strict';
+}
+
+// Função para obter valor de um cookie
+function getCookie(name) {
+    const nameEQ = name + '=';
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+}
+
+// Função para excluir um cookie
+function eraseCookie(name) {
+    document.cookie = name + '=; Max-Age=-99999999; path=/';
+}
+
+// Initialize notification system
+function initializeNotificationSystem() {
+    // Create or ensure window.notificationSystem exists
+    window.notificationSystem = window.notificationSystem || {};
+
+    if (!window.notificationSystem?.messages) {
+        // Populate with mock/initial data
+        window.notificationSystem = {
+            messages: [],
+            notifications: [],
+            announcements: [],
+            callbacks: {},
+            ...window.notificationSystem
+        };
+    }
+
+    window.notificationSystem.messages = mockMessages;
+    window.notificationSystem.announcements = mockAnnouncements;
+
+    // Load state from localStorage
+    window.notificationSystem.loadState();
+
+    // Set up event listeners for notifications
+    window.notificationSystem.on('newMessage', (message) => {
+        if (currentUser && message.toUserId === currentUser.id) {
+            const sender = mockUsers.find(u => u.id === message.fromUserId);
+            showNotification(
+                'Nova Mensagem',
+                `Você recebeu uma nova mensagem de ${sender ? sender.name : 'Usuário Desconhecido'}`,
+                'info'
+            );
+            updateHeaderNotifications();
+        }
+    });
+
+    window.notificationSystem.on('newAnnouncement', (announcement) => {
+        if (currentUser && (!announcement.targetSectors || announcement.targetSectors.includes(currentUser.sector))) {
+            showNotification(
+                'Novo Comunicado',
+                `Novo comunicado: ${announcement.title}`,
+                'info'
+            );
+            updateHeaderNotifications();
+        }
+    });
+
+    window.notificationSystem.on('newNotification', (notification) => {
+        if (currentUser && (notification.targetUserId === null || notification.targetUserId === currentUser.id)) {
+            updateHeaderNotifications();
+        }
+    });
+
+    // Save state periodically
+    setInterval(() => {
+        window.notificationSystem.saveState();
+    }, 60000); // Save every minute
+}
+
+// Update notification count in header
+function updateHeaderNotifications() {
+    if (!currentUser) return;
+
+    const messageCount = window.notificationSystem.getUnreadMessageCount(currentUser.id);
+    const announcementCount = window.notificationSystem.getUserAnnouncements(currentUser.id, currentUser.sector)
+        .filter(a => !a.readBy.includes(currentUser.id)).length;
+    const notificationCount = window.notificationSystem.getUnreadNotificationCount(currentUser.id);
+
+    const totalCount = messageCount + announcementCount + notificationCount;
+
+    const notificationCountElement = document.getElementById('notification-count');
+    notificationCountElement.textContent = totalCount;
+
+    if (totalCount > 0) {
+        notificationCountElement.style.display = 'flex';
+    } else {
+        notificationCountElement.style.display = 'none';
+    }
+}
+
+// Setup event for notification bell
+function setupNotificationBell() {
+    const notificationBell = document.getElementById('notification-bell');
+    if (notificationBell) {
+        notificationBell.addEventListener('click', toggleNotificationPanel);
+    }
+}
+
+// Toggle notification panel
+function toggleNotificationPanel() {
+    const existingPanel = document.getElementById('notification-panel');
+
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+
+    if (!currentUser) return;
+
+    // Get user's notifications
+    const messages = window.notificationSystem.getUserMessages(currentUser.id);
+    const unreadMessageCount = window.notificationSystem.getUnreadMessageCount(currentUser.id);
+
+    const announcements = window.notificationSystem.getUserAnnouncements(currentUser.id, currentUser.sector);
+    const unreadAnnouncementCount = announcements.filter(a => !a.readBy.includes(currentUser.id)).length;
+
+    const notifications = window.notificationSystem.getUserNotifications(currentUser.id);
+    const unreadNotificationCount = window.notificationSystem.getUnreadNotificationCount(currentUser.id);
+
+    // Create notification panel
+    const panel = document.createElement('div');
+    panel.id = 'notification-panel';
+    panel.className = 'notification-panel';
+
+    panel.innerHTML = `
+        <div class="notification-panel-header">
+            <h3>Notificações</h3>
+            <button class="mark-all-read">Marcar todas como lidas</button>
+        </div>
+        <div class="notification-panel-tabs">
+            <div class="notification-tab active" data-tab="all">
+                Todas (${unreadMessageCount + unreadAnnouncementCount + unreadNotificationCount})
+            </div>
+            <div class="notification-tab" data-tab="messages">
+                Mensagens (${unreadMessageCount})
+            </div>
+            <div class="notification-tab" data-tab="announcements">
+                Avisos (${unreadAnnouncementCount})
+            </div>
+        </div>
+        <div class="notification-panel-content">
+            ${renderNotificationItems(messages, announcements, notifications)}
+        </div>
+        <div class="notification-panel-footer">
+            <a href="#" id="view-all-notifications">Ver todas as notificações</a>
+        </div>
+    `;
+
+    // Append to body
+    document.body.appendChild(panel);
+
+    // Add event listeners
+    setupNotificationPanelEvents(panel);
+}
+
+// Render notification items
+function renderNotificationItems(messages, announcements, notifications, filter = 'all') {
+    if (messages.length === 0 && announcements.length === 0 && notifications.length === 0) {
+        return `<div class="notification-empty">Nenhuma notificação encontrada</div>`;
+    }
+
+    let html = '';
+
+    // Filter items based on tab
+    const messagesToShow = (filter === 'all' || filter === 'messages') ? messages : [];
+    const announcementsToShow = (filter === 'all' || filter === 'announcements') ? announcements : [];
+    const notificationsToShow = (filter === 'all') ? notifications : [];
+
+    // Combine all items and sort by date (newest first)
+    const allItems = [
+        ...messagesToShow.map(item => ({ type: 'message', data: item })),
+        ...announcementsToShow.map(item => ({ type: 'announcement', data: item })),
+        ...notificationsToShow.map(item => ({ type: 'notification', data: item }))
+    ].sort((a, b) => new Date(b.data.timestamp) - new Date(a.data.timestamp));
+
+    // Render each item
+    allItems.forEach(item => {
+        if (item.type === 'message') {
+            const message = item.data;
+            const sender = mockUsers.find(u => u.id === message.fromUserId);
+
+            html += `
+                <div class="notification-item ${message.read ? '' : 'unread'}" data-type="message" data-id="${message.id}">
+                    <div class="notification-icon">
+                        <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                    </div>
+                    <div class="notification-info">
+                        <div class="notification-message">
+                            <strong>${sender ? sender.name : 'Usuário Desconhecido'}</strong> enviou uma mensagem: ${message.subject}
+                        </div>
+                        <div class="notification-time">${formatDatetime(message.timestamp)}</div>
+                    </div>
+                </div>
+            `;
+        } else if (item.type === 'announcement') {
+            const announcement = item.data;
+            const sender = mockUsers.find(u => u.id === announcement.fromUserId);
+            const isRead = announcement.readBy.includes(currentUser.id);
+
+            html += `
+                <div class="notification-item ${isRead ? '' : 'unread'}" data-type="announcement" data-id="${announcement.id}">
+                    <div class="notification-icon">
+                        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+                    </svg>
+                    </div>
+                    <div class="notification-info">
+                        <div class="notification-message">
+                            <strong>${sender ? sender.name : 'Sistema'}</strong> publicou um comunicado: ${announcement.title}
+                        </div>
+                        <div class="notification-time">${formatDatetime(announcement.timestamp)}</div>
+                    </div>
+                </div>
+            `;
+        } else if (item.type === 'notification') {
+            const notification = item.data;
+
+            html += `
+                <div class="notification-item ${notification.read ? '' : 'unread'}" data-type="notification" data-id="${notification.id}">
+                    <div class="notification-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2-4H6V5h12v12h-2v-2H4v2z"/>
+                    </svg>
+                    </div>
+                    <div class="notification-info">
+                        <div class="notification-message">
+                            ${notification.content}
+                        </div>
+                        <div class="notification-time">${formatDatetime(notification.timestamp)}</div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+
+    return html;
+}
+
+// Setup events for notification panel
+function setupNotificationPanelEvents(panel) {
+    // Tabs
+    const tabs = panel.querySelectorAll('.notification-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            const filter = tab.getAttribute('data-tab');
+            const messages = window.notificationSystem.getUserMessages(currentUser.id);
+            const announcements = window.notificationSystem.getUserAnnouncements(currentUser.id, currentUser.sector);
+            const notifications = window.notificationSystem.getUserNotifications(currentUser.id);
+
+            panel.querySelector('.notification-panel-content').innerHTML =
+                renderNotificationItems(messages, announcements, notifications, filter);
+
+            // Re-attach event listeners to new items
+            setupNotificationItemEvents(panel);
         });
     });
 
-    document.querySelectorAll('.delete-employee').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const userId = parseInt(this.getAttribute('data-id'));
-            deleteEmployee(userId);
+    // Mark all as read
+    const markAllReadBtn = panel.querySelector('.mark-all-read');
+    markAllReadBtn.addEventListener('click', () => {
+        // Mark all messages as read
+        window.notificationSystem.messages.forEach(message => {
+            if (message.toUserId === currentUser.id && !message.read) {
+                window.notificationSystem.markMessageAsRead(message.id);
+            }
+        });
+
+        // Mark all announcements as read
+        window.notificationSystem.announcements.forEach(announcement => {
+            if (!announcement.targetSectors || announcement.targetSectors.includes(currentUser.sector)) {
+                window.notificationSystem.markAnnouncementAsRead(announcement.id, currentUser.id);
+            }
+        });
+
+        // Mark all notifications as read
+        window.notificationSystem.notifications.forEach(notification => {
+            if (notification.targetUserId === currentUser.id || notification.targetUserId === null) {
+                window.notificationSystem.markNotificationAsRead(notification.id);
+            }
+        });
+
+        // Update UI
+        updateHeaderNotifications();
+        toggleNotificationPanel(); // Close and reopen to refresh
+        toggleNotificationPanel();
+    });
+
+    // View all notifications
+    const viewAllBtn = panel.querySelector('#view-all-notifications');
+    viewAllBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleNotificationPanel(); // Close the panel
+        loadCommunications(); // Load the communications page
+    });
+
+    // Setup item events
+    setupNotificationItemEvents(panel);
+
+    // Close when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!panel.contains(e.target) && e.target !== document.getElementById('notification-bell')) {
+            panel.remove();
+        }
+    });
+}
+
+// Setup events for notification items
+function setupNotificationItemEvents(panel) {
+    const items = panel.querySelectorAll('.notification-item');
+    items.forEach(item => {
+        item.addEventListener('click', () => {
+            const type = item.getAttribute('data-type');
+            const id = parseInt(item.getAttribute('data-id'));
+
+            if (type === 'message') {
+                // Mark message as read
+                window.notificationSystem.markMessageAsRead(id);
+                item.classList.remove('unread');
+
+                // Open messaging interface with this message selected
+                toggleNotificationPanel(); // Close panel
+                loadCommunications('messages', id);
+            } else if (type === 'announcement') {
+                // Mark announcement as read
+                window.notificationSystem.markAnnouncementAsRead(id, currentUser.id);
+                item.classList.remove('unread');
+
+                // Open announcements interface
+                toggleNotificationPanel(); // Close panel
+                loadCommunications('announcements', id);
+            } else if (type === 'notification') {
+                // Mark notification as read
+                window.notificationSystem.markNotificationAsRead(id);
+                item.classList.remove('unread');
+
+                // Handle notification based on its type
+                const notification = window.notificationSystem.notifications.find(n => n.id === id);
+                if (notification && notification.relatedItemId) {
+                    // Navigate to related item
+                    handleNotificationNavigation(notification);
+                }
+            }
+
+            // Update header notification count
+            updateHeaderNotifications();
         });
     });
 }
 
-function exportEmployeesToPDF() {
-    // Show progress notification
-    const notification = showNotification('Exportando...', 'Gerando relatório de colaboradores em PDF, aguarde.', 'info');
+// Handle navigation when a notification is clicked
+function handleNotificationNavigation(notification) {
+    // Implementation depends on your application structure
+    // For example, if notification is about a ticket:
+    if (notification.type === 'ticket') {
+        toggleNotificationPanel(); // Close panel
+        loadTickets();
+        // Additional logic to select the specific ticket
+    } else if (notification.type === 'maintenance') {
+        toggleNotificationPanel(); // Close panel
+        loadMyTasks();
+    }
+}
 
-    setTimeout(() => {
-        try {
-            const doc = new jspdf.jsPDF();
+// Load communications page
+function loadCommunications(defaultTab = 'messages', selectedItemId = null) {
+    const contentArea = document.getElementById('content-area');
 
-            // Configure title and date
-            doc.setFontSize(18);
-            doc.text('Relatório de Colaboradores', 14, 20);
+    contentArea.innerHTML = `
+        <div class="page-title">
+            <h2>Comunicações</h2>
+        </div>
 
-            doc.setFontSize(11);
-            doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-            doc.text(`Usuário: ${currentUser.name}`, 14, 37);
+        <div class="communication-tabs">
+            <button class="btn-tab ${defaultTab === 'messages' ? 'active' : ''}" data-tab="messages">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm12 6V9c0-.55-.45-1-1-1h-2v5h2c.55 0 1-.45 1-1zm-2-3h1v3h-1V9z"/>
+                </svg>
+                Mensagens
+            </button>
+            <button class="btn-tab ${defaultTab === 'announcements' ? 'active' : ''}" data-tab="announcements">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 9h-2V5h2v6zm0 4h-2v-2h2v2z"/>
+                </svg>
+                Avisos e Comunicados
+            </button>
+        </div>
 
-            // Prepare data for table
-            const employeesData = mockUsers.map(user => {
-                let roleName = '';
-                switch (user.role) {
-                    case 'operator': roleName = 'Operador'; break;
-                    case 'technician': roleName = 'Técnico'; break;
-                    case 'manager': roleName = 'Gestor'; break;
-                    default: roleName = user.role;
-                }
+        <div id="communication-content"></div>
+    `;
 
-                return {
-                    id: user.id,
-                    name: user.name,
-                    role: roleName,
-                    sector: user.sector,
-                    email: user.email
-                };
-            });
+    // Set up tab switching
+    const tabs = document.querySelectorAll('.communication-tabs .btn-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
 
-            // Configure table columns
-            const columns = [
-                { key: 'id', header: 'ID' },
-                { key: 'name', header: 'Nome' },
-                { key: 'role', header: 'Função' },
-                { key: 'sector', header: 'Setor' },
-                { key: 'email', header: 'E-mail' }
-            ];
+            const tabName = tab.getAttribute('data-tab');
+            const contentArea = document.getElementById('communication-content');
 
-            // Generate table
-            doc.autoTable({
-                startY: 45,
-                head: [columns.map(col => col.header)],
-                body: employeesData.map(item => columns.map(col => item[col.key])),
-                theme: 'striped',
-                headStyles: {
-                    fillColor: [27, 38, 59], // Greek blue
-                    textColor: 255
-                },
-                styles: {
-                    fontSize: 9,
-                    cellPadding: 3
-                }
-            });
-
-            // Footer
-            const pageCount = doc.internal.getNumberOfPages();
-            for (let i = 1; i <= pageCount; i++) {
-                doc.setPage(i);
-
-                // Add footer
-                doc.setFontSize(8);
-                doc.text(`Sistema de Chamados - Página ${i} de ${pageCount}`,
-                    doc.internal.pageSize.width / 2,
-                    doc.internal.pageSize.height - 10,
-                    { align: 'center' });
+            if (tabName === 'messages') {
+                renderMessagingInterface(contentArea);
+            } else if (tabName === 'announcements') {
+                renderAnnouncementsInterface(contentArea);
             }
+        });
+    });
 
-            // Save the file
-            doc.save(`relatorio_colaboradores_${new Date().toISOString().split('T')[0]}.pdf`);
+    // Load default tab content
+    const contentContainer = document.getElementById('communication-content');
+    if (defaultTab === 'messages') {
+        renderMessagingInterface(contentContainer);
+    } else if (defaultTab === 'announcements') {
+        renderAnnouncementsInterface(contentContainer);
+    }
+}
 
-            // Update notification
-            notification.querySelector('.notification-title').textContent = 'PDF Gerado';
-            notification.querySelector('.notification-message').textContent = 'O relatório de colaboradores foi gerado com sucesso!';
-            notification.classList.remove('info');
-            notification.classList.add('success');
-        } catch (error) {
-            // Show error notification
-            showNotification('Erro ao Exportar', 'Erro ao gerar PDF: ' + error.message, 'error');
-            console.error('Erro ao gerar PDF:', error);
+// Helper function to load scripts dynamically
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve(script);
+        script.onerror = () => reject(new Error(`Script load error for ${src}`));
+        document.head.appendChild(script);
+    });
+}
+
+// Helper function to translate roles
+function translateRole(role) {
+    switch (role) {
+        case 'operator': return 'Operador';
+        case 'technician': return 'Técnico';
+        case 'manager': return 'Gestor';
+        case 'admin': return 'Administrador';
+        default: return 'Desconhecido';
+    }
+}
+
+// Show notification function
+function showNotification(title, message, type = 'info') {
+    const container = document.getElementById('notification-container');
+    if (!container) {
+        console.warn('Notification container not found');
+        return;
+    }
+
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+
+    const iconSvg = getNotificationIcon(type);
+
+    notification.innerHTML = `
+        <div class="notification-icon">
+            ${iconSvg}
+        </div>
+        <div class="notification-content">
+            <div class="notification-title">${title}</div>
+            <div class="notification-message">${message}</div>
+        </div>
+        <button class="notification-close" aria-label="Fechar notificação">&times;</button>
+    `;
+
+    container.appendChild(notification);
+
+    // Close button event
+    notification.querySelector('.notification-close').addEventListener('click', () => {
+        notification.remove();
+    });
+
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
         }
-    }, 800);
+    }, 5000);
+}
+
+// Get notification icon based on type
+function getNotificationIcon(type) {
+    switch (type) {
+        case 'success':
+            return '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+        case 'error':
+            return '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+        case 'warning':
+            return '<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>';
+        default:
+            return '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>';
+    }
+}
+
+// Generate report function
+function generateReport() {
+    const startDate = document.getElementById('report-start-date');
+    const endDate = document.getElementById('report-end-date');
+    const reportType = document.getElementById('report-type');
+
+    if (!startDate || !endDate || !reportType) {
+        showNotification('Erro', 'Elementos do formulário não encontrados', 'error');
+        return;
+    }
+
+    const startDateValue = startDate.value;
+    const endDateValue = endDate.value;
+    const reportTypeValue = reportType.value;
+
+    if (!startDateValue || !endDateValue) {
+        showNotification('Erro', 'Por favor, selecione o período do relatório', 'error');
+        return;
+    }
+
+    showNotification('Relatório Gerado', `Relatório de ${reportTypeValue} gerado para o período de ${startDateValue} a ${endDateValue}`, 'success');
+
+    // Simulate report generation
+    setTimeout(() => {
+        initializeReportCharts();
+    }, 1000);
+}
+
+// Helper functions for date formatting
+function getTodayDate() {
+    return new Date().toISOString().split('T')[0];
+}
+
+function getThirtyDaysAgo() {
+    const date = new Date();
+    date.setDate(date.getDate() - 30);
+    return date.toISOString().split('T')[0];
+}
+
+function formatDatetime(date) {
+    return new Date(date).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// Function to export report data as CSV
+function exportReportCSV() {
+    showNotification('Exportação Iniciada', 'O relatório está sendo exportado para CSV...', 'info');
+
+    try {
+        // Get report data
+        const reportType = document.getElementById('report-type').value;
+        const startDate = document.getElementById('report-start-date').value;
+        const endDate = document.getElementById('report-end-date').value;
+
+        // Format CSV content
+        let csvContent = "Tipo de Relatório;Período;Qtde Chamados;Tempo Médio;Eficiência\n";
+        csvContent += `${translateReportType(reportType)};${startDate} a ${endDate};${mockTickets.length};60min;87%\n\n`;
+
+        // Add ticket details
+        csvContent += "ID;Máquina;Peça;Descrição;Status;Data Abertura;Técnico\n";
+        mockTickets.forEach(ticket => {
+            csvContent += `${ticket.id};"${getMachineName(ticket.machineId)}";"${getPartName(ticket.partId)}";"${ticket.description}";"${ticket.status}";"${formatDatetime(ticket.createdAt)}";"${getUserName(ticket.assignedTo)}"\n`;
+        });
+
+        // Create and download CSV file
+        const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `relatorio-${reportType}-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        showNotification('Exportação Concluída', 'O relatório foi exportado com sucesso!', 'success');
+    } catch (error) {
+        console.error('Erro ao gerar relatório:', error);
+        showNotification('Erro na Exportação', 'Ocorreu um erro ao gerar o relatório. Tente novamente.', 'error');
+    }
+}
+
+// Helper function to translate report type names
+function translateReportType(type) {
+    switch (type) {
+        case 'performance': return 'Desempenho';
+        case 'failure': return 'Falhas';
+        case 'cost': return 'Custo de Manutenção';
+        case 'workload': return 'Carga de Trabalho';
+        default: return 'Outro';
+    }
 }

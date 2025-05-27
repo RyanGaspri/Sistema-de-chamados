@@ -124,3 +124,4 @@ C:\Users\Ryan\Downloads\PI_SISTEMAS_CHAMADOS\Sistema-de-chamados\Sistema_Chamado
 C:\Users\Ryan\Downloads\PI_SISTEMAS_CHAMADOS\Sistema-de-chamados\Sistema_Chamados\obj\Debug\net8.0\Sistema_Chamados.pdb
 C:\Users\Ryan\Downloads\PI_SISTEMAS_CHAMADOS\Sistema-de-chamados\Sistema_Chamados\obj\Debug\net8.0\Sistema_Chamados.genruntimeconfig.cache
 C:\Users\Ryan\Downloads\PI_SISTEMAS_CHAMADOS\Sistema-de-chamados\Sistema_Chamados\obj\Debug\net8.0\ref\Sistema_Chamados.dll
+C:\Users\Ryan\Downloads\PI_SISTEMAS_CHAMADOS\Sistema-de-chamados\Sistema_Chamados\obj\Debug\net8.0\Sistema_Chamados.sourcelink.json
