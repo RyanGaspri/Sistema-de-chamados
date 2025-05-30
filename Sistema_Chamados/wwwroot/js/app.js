@@ -1,8 +1,8 @@
 ﻿// Dados mockados para simulação
 const mockUsers = [
-    { id: 1, username: "operador", password: "op123", name: "João Operador", role: "operator", sector: "Produção", email: "joao@empresa.com" },
-    { id: 2, username: "gestor", password: "ges123", name: "Maria Gestora", role: "manager", sector: "Gerência", email: "maria@empresa.com" },
-    { id: 3, username: "tecnico", password: "tec123", name: "Pedro Técnico", role: "technician", sector: "Automação", email: "pedro@empresa.com" },
+    { id: 1, username: "ryan", password: "op123", name: "Ryan Gaspri", role: "operator", sector: "Produção", email: "joao@empresa.com" },
+    { id: 2, username: "reinaldo", password: "ges123", name: "Reinaldo Figueiredo", role: "manager", sector: "Gerência", email: "maria@empresa.com" },
+    { id: 3, username: "jefferson", password: "tec123", name: "Jefferson Pintor", role: "technician", sector: "Automação", email: "pedro@empresa.com" },
     { id: 4, username: "adm", password: "adm123", name: "Administrador", role: "manager", sector: "Administração", email: "admin@empresa.com" }
 ];
 
@@ -90,8 +90,8 @@ const mockMessages = [
         fromUserId: 2,
         toUserId: 3,
         subject: 'Manutenção Agendada',
-        content: 'Olá Pedro, precisamos agendar uma manutenção preventiva para a Máquina de Embalagem. Podemos marcar para amanhã às 9h?',
-        timestamp: new Date(2023, 10, 18, 14, 30),
+        content: 'Olá, precisamos agendar uma manutenção preventiva para a Máquina de Embalagem. Podemos marcar para amanhã às 9h?',
+        timestamp: new Date(2025, 10, 18, 14, 30),
         read: true
     },
     {
@@ -100,7 +100,7 @@ const mockMessages = [
         toUserId: 3,
         subject: 'Problema na Esteira',
         content: 'Estamos com um problema recorrente na esteira transportadora. Poderia verificar quando tiver disponibilidade?',
-        timestamp: new Date(2023, 10, 19, 10, 15),
+        timestamp: new Date(2025, 10, 19, 10, 15),
         read: false
     },
     {
@@ -108,8 +108,8 @@ const mockMessages = [
         fromUserId: 4,
         toUserId: 2,
         subject: 'Relatório Mensal',
-        content: 'Bom dia Maria, o relatório mensal de manutenções preventivas e corretivas está disponível para análise. Por favor, revise e me dê um retorno até o final do dia.',
-        timestamp: new Date(2023, 10, 19, 9, 0),
+        content: 'Bom dia Reinaldo, o relatório mensal de manutenções preventivas e corretivas está disponível para análise. Por favor, revise e me dê um retorno até o final do dia.',
+        timestamp: new Date(2025, 10, 19, 9, 0),
         read: false
     },
     {
@@ -117,8 +117,8 @@ const mockMessages = [
         fromUserId: 3,
         toUserId: 1,
         subject: 'Retorno sobre Esteira',
-        content: 'João, verifiquei a esteira e identifiquei um problema nos rolamentos. Vou providenciar a troca amanhã pela manhã.',
-        timestamp: new Date(2023, 10, 19, 16, 45),
+        content: 'Ryan, verifiquei a esteira e identifiquei um problema nos rolamentos. Vou providenciar a troca amanhã pela manhã.',
+        timestamp: new Date(2025, 10, 19, 16, 45),
         read: true
     }
 ];
@@ -129,7 +129,7 @@ const mockAnnouncements = [
         fromUserId: 4,
         title: 'Manutenção Programada - Sistema Offline',
         content: 'Informamos que no próximo domingo (26/11) das 8h às 12h, o sistema estará indisponível para manutenção programada. Por favor, planejem suas atividades considerando esta parada.',
-        timestamp: new Date(2023, 10, 18, 11, 0),
+        timestamp: new Date(2025, 10, 18, 11, 0),
         targetSectors: null, // all sectors
         readBy: [1, 2]
     },
@@ -138,7 +138,7 @@ const mockAnnouncements = [
         fromUserId: 2,
         title: 'Novo Procedimento de Manutenção',
         content: 'A partir da próxima semana, implementaremos um novo procedimento para abertura de chamados de manutenção. Todos os setores devem utilizar o novo formulário disponível no sistema.\n\nCaso tenham dúvidas, entrem em contato com o setor de Gerência.',
-        timestamp: new Date(2023, 10, 19, 15, 30),
+        timestamp: new Date(2025, 10, 19, 15, 30),
         targetSectors: ['Produção', 'Logística', 'Moldagem'],
         readBy: []
     }

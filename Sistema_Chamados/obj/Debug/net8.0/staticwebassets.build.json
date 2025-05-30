@@ -1,6 +1,6 @@
 {
   "Version": 1,
-  "Hash": "uv5yUVjdNuYwmLDO42ZgtCdnr4KtTUYNQTvZEYd195g=",
+  "Hash": "XeqHRCZQZOoKKUm7eFiy0/Ut3Busrtgkq2+L6dhwi20=",
   "Source": "Sistema_Chamados",
   "BasePath": "_content/Sistema_Chamados",
   "Mode": "Default",
@@ -136,8 +136,8 @@
       "RelatedAsset": "",
       "AssetTraitName": "",
       "AssetTraitValue": "",
-      "Fingerprint": "rchily3k7i",
-      "Integrity": "W1UqwEaAsw1tZdbYOfNn4MOYJSsciAg+LsXPbXSo/I0=",
+      "Fingerprint": "61unyfvt9i",
+      "Integrity": "yiUJOllHXWJF2G8exYLbO4lD/yg+I4/YfXT+A2pDUbY=",
       "CopyToOutputDirectory": "Never",
       "CopyToPublishDirectory": "PreserveNewest",
       "OriginalItemSpec": "wwwroot\\js\\app.js"
@@ -1651,6 +1651,51 @@
       ]
     },
     {
+      "Route": "js/app.61unyfvt9i.js",
+      "AssetFile": "C:\\Users\\Ryan\\Downloads\\PI_SISTEMAS_CHAMADOS\\Sistema-de-chamados\\Sistema_Chamados\\wwwroot\\js\\app.js",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "148697"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"yiUJOllHXWJF2G8exYLbO4lD/yg+I4/YfXT+A2pDUbY=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 30 May 2025 01:23:03 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "61unyfvt9i"
+        },
+        {
+          "Name": "label",
+          "Value": "js/app.js"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-yiUJOllHXWJF2G8exYLbO4lD/yg+I4/YfXT+A2pDUbY="
+        }
+      ]
+    },
+    {
       "Route": "js/app.js",
       "AssetFile": "C:\\Users\\Ryan\\Downloads\\PI_SISTEMAS_CHAMADOS\\Sistema-de-chamados\\Sistema_Chamados\\wwwroot\\js\\app.js",
       "Selectors": [],
@@ -1661,7 +1706,7 @@
         },
         {
           "Name": "Content-Length",
-          "Value": "148696"
+          "Value": "148697"
         },
         {
           "Name": "Content-Type",
@@ -1669,11 +1714,11 @@
         },
         {
           "Name": "ETag",
-          "Value": "\"W1UqwEaAsw1tZdbYOfNn4MOYJSsciAg+LsXPbXSo/I0=\""
+          "Value": "\"yiUJOllHXWJF2G8exYLbO4lD/yg+I4/YfXT+A2pDUbY=\""
         },
         {
           "Name": "Last-Modified",
-          "Value": "Tue, 27 May 2025 21:17:52 GMT"
+          "Value": "Fri, 30 May 2025 01:23:03 GMT"
         },
         {
           "Name": "Cache-Control",
@@ -1683,52 +1728,7 @@
       "EndpointProperties": [
         {
           "Name": "integrity",
-          "Value": "sha256-W1UqwEaAsw1tZdbYOfNn4MOYJSsciAg+LsXPbXSo/I0="
-        }
-      ]
-    },
-    {
-      "Route": "js/app.rchily3k7i.js",
-      "AssetFile": "C:\\Users\\Ryan\\Downloads\\PI_SISTEMAS_CHAMADOS\\Sistema-de-chamados\\Sistema_Chamados\\wwwroot\\js\\app.js",
-      "Selectors": [],
-      "ResponseHeaders": [
-        {
-          "Name": "Accept-Ranges",
-          "Value": "bytes"
-        },
-        {
-          "Name": "Content-Length",
-          "Value": "148696"
-        },
-        {
-          "Name": "Content-Type",
-          "Value": "text/javascript"
-        },
-        {
-          "Name": "ETag",
-          "Value": "\"W1UqwEaAsw1tZdbYOfNn4MOYJSsciAg+LsXPbXSo/I0=\""
-        },
-        {
-          "Name": "Last-Modified",
-          "Value": "Tue, 27 May 2025 21:17:52 GMT"
-        },
-        {
-          "Name": "Cache-Control",
-          "Value": "max-age=31536000, immutable"
-        }
-      ],
-      "EndpointProperties": [
-        {
-          "Name": "fingerprint",
-          "Value": "rchily3k7i"
-        },
-        {
-          "Name": "label",
-          "Value": "js/app.js"
-        },
-        {
-          "Name": "integrity",
-          "Value": "sha256-W1UqwEaAsw1tZdbYOfNn4MOYJSsciAg+LsXPbXSo/I0="
+          "Value": "sha256-yiUJOllHXWJF2G8exYLbO4lD/yg+I4/YfXT+A2pDUbY="
         }
       ]
     },
